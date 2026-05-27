@@ -1,0 +1,271 @@
+import random
+from django.db import transaction
+from django.utils import timezone
+from datetime import timedelta
+from django.db import models
+from django.contrib.auth.models import User
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from .permissions import (
+    IsNotTester,
+    IsAdmin,
+    is_admin,
+    get_user_permissions,
+    PERMISSION_FIELDS,
+)
+from .models import UserProfile, apply_role_default_permissions, ROLE_DEFAULT_PERMISSIONS
+from rest_framework.response import Response
+from .serializers import (
+    UserSerializer,
+    RegisterSerializer,
+    ChangePasswordSerializer,
+    ResetPasswordSerializer,
+)
+from .models import VerificationCode
+from .throttles import SendCodeRateThrottle
+from .email_utils import send_mail_async
+
+CODE_TTL = timedelta(minutes=5)
+
+
+def _validate_glazero_email(email):
+    return email.endswith('@glazero.com')
+
+
+def _issue_verification_code(email, subject, message_tpl):
+    VerificationCode.objects.filter(email=email, is_used=False).update(is_used=True)
+    code = str(random.randint(100000, 999999))
+    VerificationCode.objects.create(email=email, code=code)
+    send_mail_async(
+        subject=subject,
+        message=message_tpl.format(code=code),
+        recipient_list=[email],
+    )
+
+
+def _verify_code(email, code):
+    return VerificationCode.objects.select_for_update().filter(
+        email=email,
+        code=code,
+        is_used=False,
+        created_at__gte=timezone.now() - CODE_TTL,
+    ).first()
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([SendCodeRateThrottle])
+def send_code(request):
+    email = request.data.get('email', '').strip()
+    if not _validate_glazero_email(email):
+        return Response({'error': '仅允许 @glazero.com 邮箱注册'}, status=status.HTTP_400_BAD_REQUEST)
+
+    _issue_verification_code(
+        email,
+        '测试管理系统 - 注册验证码',
+        '您的注册验证码是：{code}，5分钟内有效。',
+    )
+    return Response({'message': '验证码已发送'})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([SendCodeRateThrottle])
+def send_reset_code(request):
+    email = request.data.get('email', '').strip()
+    if not _validate_glazero_email(email):
+        return Response({'error': '仅允许 @glazero.com 邮箱'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if User.objects.filter(email=email).exists():
+        _issue_verification_code(
+            email,
+            '测试管理系统 - 重置密码验证码',
+            '您正在重置密码，验证码是：{code}，5分钟内有效。如非本人操作请忽略。',
+        )
+    return Response({'message': '若该邮箱已注册，验证码将发送至您的邮箱'})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register(request):
+    email = request.data.get('email', '')
+    code = request.data.get('code', '')
+
+    with transaction.atomic():
+        vc = _verify_code(email, code)
+        if not vc:
+            return Response({'error': '验证码错误或已过期'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = RegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            vc.is_used = True
+            vc.save()
+            return Response({'message': '注册成功'}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password(request):
+    email = request.data.get('email', '').strip()
+    code = request.data.get('code', '').strip()
+
+    serializer = ResetPasswordSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    user = User.objects.filter(email=email).first()
+    if not user:
+        return Response({'error': '该邮箱未注册'}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        vc = _verify_code(email, code)
+        if not vc:
+            return Response({'error': '验证码错误或已过期'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(serializer.validated_data['password'])
+        user.save()
+        vc.is_used = True
+        vc.save()
+
+    return Response({'message': '密码已重置，请使用新密码登录'})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def change_password(request):
+    serializer = ChangePasswordSerializer(data=request.data)
+    if not serializer.is_valid():
+        err = serializer.errors
+        if 'non_field_errors' in err:
+            return Response({'error': err['non_field_errors'][0]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(err, status=status.HTTP_400_BAD_REQUEST)
+
+    user = serializer.validated_data['user']
+    user.set_password(serializer.validated_data['new_password'])
+    user.save()
+    return Response({'message': '密码修改成功，请使用新密码登录'})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me(request):
+    user = User.objects.select_related('profile').filter(pk=request.user.pk).first()
+    serializer = UserSerializer(user or request.user)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsNotTester])
+def user_list(request):
+    qs = User.objects.select_related('profile').all()
+    serializer = UserSerializer(qs, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_user_permissions(request):
+    """管理员：列出所有非管理员用户及权限配置。"""
+    qs = User.objects.select_related('profile').filter(
+        models.Q(profile__isnull=True) | ~models.Q(profile__role='admin')
+    ).order_by('username')
+
+    role_choices = [
+        {'value': code, 'label': label}
+        for code, label in UserProfile.ROLE_CHOICES
+        if code != 'admin'
+    ]
+    permission_meta = [
+        {'key': 'can_access_projects', 'label': '项目管理', 'desc': '访问项目管理模块及配置'},
+        {'key': 'can_access_testcase_library', 'label': '测试用例库', 'desc': '查看产品线用例库'},
+        {'key': 'can_manage_testcase_library', 'label': '管理用例库', 'desc': '新建、编辑、删除用例库用例'},
+        {'key': 'can_access_my_projects', 'label': '我的项目', 'desc': '查看参与项目并执行分配用例'},
+    ]
+    users = UserSerializer(qs, many=True).data
+    admins = UserSerializer(
+        User.objects.select_related('profile').filter(profile__role='admin').order_by('username'),
+        many=True,
+    ).data
+    return Response({
+        'users': users,
+        'admins': admins,
+        'role_choices': role_choices,
+        'permission_meta': permission_meta,
+        'role_defaults': {
+            role: defaults for role, defaults in ROLE_DEFAULT_PERMISSIONS.items() if role != 'admin'
+        },
+    })
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_update_user_permissions(request, user_id):
+    """管理员：更新指定非管理员用户的角色与权限。"""
+    from .serializers import AdminUserPermissionSerializer
+
+    target = User.objects.select_related('profile').filter(pk=user_id).first()
+    if not target:
+        return Response({'error': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    profile = UserProfile.objects.get_or_create(user=target, defaults={'role': 'tester'})[0]
+    if profile.role == 'admin':
+        return Response({'error': '不能修改管理员账号权限'}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = AdminUserPermissionSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    old_role = profile.role
+    if data.get('apply_role_defaults') and 'role' in data:
+        profile.role = data['role']
+        apply_role_default_permissions(profile, profile.role)
+    elif 'role' in data and data['role'] != old_role:
+        profile.role = data['role']
+        apply_role_default_permissions(profile, profile.role)
+    elif 'role' in data:
+        profile.role = data['role']
+
+    for field in PERMISSION_FIELDS:
+        if field in data:
+            setattr(profile, field, data[field])
+
+    profile.save()
+    return Response(UserSerializer(target).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_create_user(request):
+    """管理员：直接创建用户（无需验证码）。"""
+    from .serializers import AdminCreateUserSerializer
+
+    serializer = AdminCreateUserSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    user = serializer.save()
+    return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_delete_user(request, user_id):
+    """管理员：删除非管理员用户（不可删除自己）。"""
+    if request.user.pk == user_id:
+        return Response({'error': '不能删除当前登录账号'}, status=status.HTTP_400_BAD_REQUEST)
+
+    target = User.objects.select_related('profile').filter(pk=user_id).first()
+    if not target:
+        return Response({'error': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    profile = UserProfile.objects.filter(user=target).first()
+    if profile and profile.role == 'admin':
+        return Response({'error': '不能删除管理员账号'}, status=status.HTTP_400_BAD_REQUEST)
+
+    username = target.username
+    with transaction.atomic():
+        target.delete()
+    return Response({'message': f'用户 {username} 已删除'})
