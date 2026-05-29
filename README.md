@@ -21,7 +21,7 @@
 | 后端框架 | Python 3.13+, Django 4.2+, Django REST Framework 3.14+ |
 | 数据库 | PostgreSQL |
 | 认证 | JWT (djangorestframework-simplejwt) |
-| 前端框架 | Vue 3 (Composition API, `<script setup>`) |
+| 前端框架 | Vue 3 |
 | 构建工具 | Vite 8+ |
 | UI 组件库 | Element Plus 2.14 |
 | 状态管理 | Pinia 3 |
