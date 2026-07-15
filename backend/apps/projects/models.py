@@ -23,7 +23,8 @@ class Project(models.Model):
 
     class Meta:
         db_table = 'project'
-        ordering = ['-created_at']
+        # D7 fix: 删掉默认 ordering = ['-created_at']
+        # list/dashboard 视图通常按其它列过滤；隐式 ordering 会拖一次 filesort。
 
     def __str__(self):
         return self.name
@@ -89,7 +90,7 @@ class ProjectTask(models.Model):
 
     class Meta:
         db_table = 'project_task'
-        ordering = ['-created_at']
+        # D7 fix: 删掉默认 ordering；dashboard 聚合走 status/priority
 
     def __str__(self):
         return f'{self.title} ({self.get_status_display()})'
@@ -121,7 +122,7 @@ class TestCaseAssignment(models.Model):
 
     class Meta:
         db_table = 'test_case_assignment'
-        ordering = ['-created_at']
+        # D7 fix: 删掉默认 ordering；list 通常按 status/approval_status 过滤
 
     def __str__(self):
         return f'{self.test_case.title} → {self.assigned_to.username if self.assigned_to else "未分配"}'

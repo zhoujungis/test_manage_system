@@ -24,10 +24,12 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='tester')
     phone = models.CharField(max_length=20, blank=True)
-    can_access_projects = models.BooleanField(default=True, verbose_name='项目管理')
-    can_access_testcase_library = models.BooleanField(default=True, verbose_name='测试用例库')
-    can_manage_testcase_library = models.BooleanField(default=True, verbose_name='管理用例库')
-    can_access_my_projects = models.BooleanField(default=True, verbose_name='我的项目')
+    # D8 fix: 默认 False（fail-closed）。权限按角色授权时由 apply_role_default_permissions()
+    # 显式打开；忘调 apply_role_default_permissions() 的代码路径也不会无脑放行。
+    can_access_projects = models.BooleanField(default=False, verbose_name='项目管理')
+    can_access_testcase_library = models.BooleanField(default=False, verbose_name='测试用例库')
+    can_manage_testcase_library = models.BooleanField(default=False, verbose_name='管理用例库')
+    can_access_my_projects = models.BooleanField(default=False, verbose_name='我的项目')
 
     class Meta:
         db_table = 'user_profile'
