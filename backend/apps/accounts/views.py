@@ -1,4 +1,4 @@
-import random
+import secrets
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
@@ -14,7 +14,13 @@ from .permissions import (
     get_user_permissions,
     PERMISSION_FIELDS,
 )
-from .models import UserProfile, apply_role_default_permissions, ROLE_DEFAULT_PERMISSIONS
+from .models import (
+    UserProfile,
+    apply_role_default_permissions,
+    ROLE_DEFAULT_PERMISSIONS,
+    VerificationCode,
+    hash_verification_code,
+)
 from rest_framework.response import Response
 from .serializers import (
     UserSerializer,
@@ -22,35 +28,67 @@ from .serializers import (
     ChangePasswordSerializer,
     ResetPasswordSerializer,
 )
-from .models import VerificationCode
-from .throttles import SendCodeRateThrottle
+from .throttles import (
+    SendCodeRateThrottle,
+    SendResetCodeRateThrottle,
+    ChangePasswordRateThrottle,
+    VerifyCodeRateThrottle,
+)
 from .email_utils import send_mail_async
 
 CODE_TTL = timedelta(minutes=5)
+
+# 通用错误信息（不能用 page-level error 字符串，否则泄漏 email 是否已注册）
+_GENERIC_VERIFY_FAIL = '验证码错误或已过期，或该邮箱未注册'
 
 
 def _validate_glazero_email(email):
     return email.endswith('@glazero.com')
 
 
-def _issue_verification_code(email, subject, message_tpl):
-    VerificationCode.objects.filter(email=email, is_used=False).update(is_used=True)
-    code = str(random.randint(100000, 999999))
-    VerificationCode.objects.create(email=email, code=code)
+def _issue_verification_code(email, purpose, subject, message_tpl):
+    """生成新的验证码；同一 email + purpose 旧的未消费码全部作废。"""
+    code = VerificationCode.issue(email, purpose)
     send_mail_async(
         subject=subject,
         message=message_tpl.format(code=code),
         recipient_list=[email],
     )
+    return code
 
 
-def _verify_code(email, code):
-    return VerificationCode.objects.select_for_update().filter(
-        email=email,
-        code=code,
-        is_used=False,
-        created_at__gte=timezone.now() - CODE_TTL,
-    ).first()
+def _verify_code(email, code, purpose):
+    """返回：成功时返回 VerificationCode 实例；失败或锁定时返回 None。
+
+    失败累计 attempts，attempts 达到 MAX_ATTEMPTS 即视为锁定；锁定后任何
+    验证尝试都直接拒绝。
+    """
+    from django.utils import timezone
+    target_hash = hash_verification_code(code)
+    # 取最新一条同 email + purpose 的有效记录用于比较 / 计数
+    with transaction.atomic():
+        vc = (VerificationCode.objects
+              .select_for_update()
+              .filter(
+                  email=email, purpose=purpose,
+                  consumed_at__isnull=True,
+              )
+              .order_by('-created_at')
+              .first())
+        if not vc:
+            return None
+        if vc.is_locked:
+            return None
+        if (timezone.now() - vc.created_at) > CODE_TTL:
+            return None
+        # 用 compare_digest 减轻时序侧信道
+        if not secrets.compare_digest(target_hash, vc.code_hash):
+            vc.record_failure()
+            return None
+        # 标记消费
+        vc.consumed_at = timezone.now()
+        vc.save(update_fields=['consumed_at'])
+        return vc
 
 
 @api_view(['POST'])
@@ -63,6 +101,7 @@ def send_code(request):
 
     _issue_verification_code(
         email,
+        VerificationCode.PURPOSE_REGISTER,
         '测试管理系统 - 注册验证码',
         '您的注册验证码是：{code}，5分钟内有效。',
     )
@@ -71,7 +110,7 @@ def send_code(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([SendCodeRateThrottle])
+@throttle_classes([SendResetCodeRateThrottle])
 def send_reset_code(request):
     email = request.data.get('email', '').strip()
     if not _validate_glazero_email(email):
@@ -80,6 +119,7 @@ def send_reset_code(request):
     if User.objects.filter(email=email).exists():
         _issue_verification_code(
             email,
+            VerificationCode.PURPOSE_RESET,
             '测试管理系统 - 重置密码验证码',
             '您正在重置密码，验证码是：{code}，5分钟内有效。如非本人操作请忽略。',
         )
@@ -88,26 +128,27 @@ def send_reset_code(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([VerifyCodeRateThrottle])
 def register(request):
-    email = request.data.get('email', '')
-    code = request.data.get('code', '')
+    email = request.data.get('email', '').strip()
+    code = request.data.get('code', '').strip()
+
+    vc = _verify_code(email, code, VerificationCode.PURPOSE_REGISTER)
+    if not vc:
+        return Response({'error': _GENERIC_VERIFY_FAIL}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = RegisterSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
-        vc = _verify_code(email, code)
-        if not vc:
-            return Response({'error': '验证码错误或已过期'}, status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            vc.is_used = True
-            vc.save()
-            return Response({'message': '注册成功'}, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+    return Response({'message': '注册成功'}, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([VerifyCodeRateThrottle])
 def reset_password(request):
     email = request.data.get('email', '').strip()
     code = request.data.get('code', '').strip()
@@ -116,27 +157,41 @@ def reset_password(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # SECURITY (C2/原 review): 不再用 '该邮箱未注册' 的分支消息，避免枚举；
+    # 把 user lookup 放到验证成功之后，确保无法通过状态码 / 错误信息探测注册状态。
+    vc = _verify_code(email, code, VerificationCode.PURPOSE_RESET)
+    if not vc:
+        return Response({'error': _GENERIC_VERIFY_FAIL}, status=status.HTTP_400_BAD_REQUEST)
+
     user = User.objects.filter(email=email).first()
     if not user:
-        return Response({'error': '该邮箱未注册'}, status=status.HTTP_400_BAD_REQUEST)
+        # 理论上：邮箱已注册才会发出 reset code；到这里仍为 None 视为
+        # 并发删除/异常。仍然返回通用错误，不暴露更多。
+        return Response({'error': _GENERIC_VERIFY_FAIL}, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
-        vc = _verify_code(email, code)
-        if not vc:
-            return Response({'error': '验证码错误或已过期'}, status=status.HTTP_400_BAD_REQUEST)
-
         user.set_password(serializer.validated_data['password'])
         user.save()
-        vc.is_used = True
-        vc.save()
-
+        # 撤销该用户所有 outstanding refresh token
+        from rest_framework_simplejwt.token_blacklist.models import (
+            OutstandingToken, BlacklistedToken,
+        )
+        for t in OutstandingToken.objects.filter(user=user):
+            BlacklistedToken.objects.get_or_create(token=t)
     return Response({'message': '密码已重置，请使用新密码登录'})
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ChangePasswordRateThrottle])
 def change_password(request):
-    serializer = ChangePasswordSerializer(data=request.data)
+    """改密：必须已登录，从 request.user 派生用户，不接受 body 里的 email/uid。
+    修改成功后撤销所有 outstanding refresh token，强制重新登录。"""
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+    serializer = ChangePasswordSerializer(
+        data=request.data,
+        context={'request': request},
+    )
     if not serializer.is_valid():
         err = serializer.errors
         if 'non_field_errors' in err:
@@ -144,9 +199,15 @@ def change_password(request):
         return Response(err, status=status.HTTP_400_BAD_REQUEST)
 
     user = serializer.validated_data['user']
-    user.set_password(serializer.validated_data['new_password'])
-    user.save()
-    return Response({'message': '密码修改成功，请使用新密码登录'})
+    new_password = serializer.validated_data['new_password']
+    user.set_password(new_password)
+    with transaction.atomic():
+        user.save()
+        # 撤销该用户的所有有效 refresh token，强制所有已登录会话重新登录
+        outstanding = OutstandingToken.objects.filter(user=user)
+        for token in outstanding:
+            BlacklistedToken.objects.get_or_create(token=token)
+    return Response({'message': '密码修改成功，请使用新密码重新登录'})
 
 
 @api_view(['GET'])
@@ -241,12 +302,23 @@ def admin_update_user_permissions(request, user_id):
 @permission_classes([IsAuthenticated, IsAdmin])
 def admin_create_user(request):
     """管理员：直接创建用户（无需验证码）。"""
+    import logging
     from .serializers import AdminCreateUserSerializer
+    audit = logging.getLogger('accounts.audit')
 
     serializer = AdminCreateUserSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     user = serializer.save()
+    # H5 fix: 审计 —— 谁创建了谁，role 是什么。
+    # 注意：serializer 已确保 role != 'admin'，但仍然留下日志以便复查。
+    audit.info(
+        'admin_create_user: actor=%s target=%s email=%s role=%s',
+        getattr(request.user, 'username', '?'),
+        user.username,
+        user.email,
+        getattr(user.profile, 'role', '?'),
+    )
     return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 

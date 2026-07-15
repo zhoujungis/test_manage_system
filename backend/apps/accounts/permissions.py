@@ -10,11 +10,24 @@ PERMISSION_FIELDS = (
 )
 
 
+def _is_active(user):
+    """Helper：JWT 可能携带已禁用账号的信息；这些 token 一律拒绝。"""
+    return bool(user and getattr(user, 'is_authenticated', False) and getattr(user, 'is_active', True))
+
+
 def get_user_profile(user):
-    if not user or not user.is_authenticated:
+    """M3 fix：未登录 / 已禁用账号一律返回 None。
+
+    返回 None 后上层权限检查一律 fail-closed，从而阻止 de-activated 账号继续访问。
+    不要再静默 get_or_create —— 读取路径不应写入。
+    """
+    if not _is_active(user):
         return None
-    profile, _ = UserProfile.objects.get_or_create(user=user, defaults={'role': 'tester'})
-    return profile
+    try:
+        return user.profile
+    except UserProfile.DoesNotExist:
+        # 单条 fallback（避免 N+1 已被 view 层 select_related 覆盖）
+        return UserProfile.objects.filter(user=user).first()
 
 
 def get_user_role(user):
@@ -23,10 +36,14 @@ def get_user_role(user):
 
 
 def is_admin(user):
+    if not _is_active(user):
+        return False
     return get_user_role(user) == 'admin'
 
 
 def is_viewer(user):
+    if not _is_active(user):
+        return False
     return get_user_role(user) == 'viewer'
 
 
@@ -53,31 +70,39 @@ def user_can_write_projects(user):
 
 
 def user_can_access_projects(user):
+    if not _is_active(user):
+        return False
     if is_admin(user):
         return True
     profile = get_user_profile(user)
-    return profile.can_access_projects if profile else False
+    return bool(profile and profile.can_access_projects)
 
 
 def user_can_access_testcase_library(user):
+    if not _is_active(user):
+        return False
     if is_admin(user):
         return True
     profile = get_user_profile(user)
-    return profile.can_access_testcase_library if profile else False
+    return bool(profile and profile.can_access_testcase_library)
 
 
 def user_can_manage_testcase_library(user):
+    if not _is_active(user):
+        return False
     if is_admin(user):
         return True
     profile = get_user_profile(user)
-    return profile.can_manage_testcase_library if profile else False
+    return bool(profile and profile.can_manage_testcase_library)
 
 
 def user_can_access_my_projects(user):
+    if not _is_active(user):
+        return False
     if is_admin(user):
         return True
     profile = get_user_profile(user)
-    return profile.can_access_my_projects if profile else False
+    return bool(profile and profile.can_access_my_projects)
 
 
 # 兼容旧逻辑
@@ -89,7 +114,8 @@ class IsAdmin(BasePermission):
     message = '仅管理员可执行此操作'
 
     def has_permission(self, request, view):
-        return request.user.is_authenticated and is_admin(request.user)
+        # M3 fix: is_admin() 内部已检查 is_active，禁止 disabled 账号继续访问管理 API
+        return is_admin(request.user)
 
 
 class IsNotTester(BasePermission):
