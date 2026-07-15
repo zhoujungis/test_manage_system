@@ -16,4 +16,11 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 
+// F16 fix: 全局错误兜底，避免组件抛错只落到 dev console。
+app.config.errorHandler = (err, instance, info) => {
+  // eslint-disable-next-line no-console
+  console.error('[Vue error]', info, err)
+  // 这里也可以接 sentry 等上报
+}
+
 app.mount('#app')

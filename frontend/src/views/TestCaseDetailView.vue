@@ -4,15 +4,15 @@
       <h2>{{ isNew ? '新建测试用例' : '编辑测试用例' }}</h2>
     </div>
     <el-card v-loading="loading">
-      <el-form :model="form" label-width="100px">
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="标题" required>
-              <el-input v-model="form.title" />
+            <el-form-item label="标题" prop="title" required>
+              <el-input v-model="form.title" maxlength="200" show-word-limit />
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item label="产品线" required>
+            <el-form-item label="产品线" prop="product_line" required>
               <el-select v-model="form.product_line">
                 <el-option label="摄像头" value="camera" />
                 <el-option label="门铃" value="doorbell" />
@@ -20,7 +20,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item label="类型">
+            <el-form-item label="类型" prop="type">
               <el-select v-model="form.type">
                 <el-option label="功能测试" value="functional" />
                 <el-option label="接口测试" value="api" />
@@ -78,16 +78,16 @@
           <div v-for="(step, idx) in form.steps" :key="idx" style="margin-bottom: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px">
             <el-row :gutter="12">
               <el-col :span="2"><el-tag>步骤{{ idx + 1 }}</el-tag></el-col>
-              <el-col :span="10"><el-input v-model="step.action" placeholder="操作步骤" /></el-col>
-              <el-col :span="10"><el-input v-model="step.expected_result" placeholder="预期结果" /></el-col>
+              <el-col :span="10"><el-input v-model="step.action" placeholder="操作步骤" maxlength="500" /></el-col>
+              <el-col :span="10"><el-input v-model="step.expected_result" placeholder="预期结果" maxlength="500" /></el-col>
               <el-col :span="2"><el-button type="danger" circle :icon="Delete" @click="removeStep(idx)" /></el-col>
             </el-row>
           </div>
           <el-button type="primary" @click="addStep">+ 添加步骤</el-button>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleSave">保存</el-button>
-          <el-button @click="goBack">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+          <el-button :disabled="saving" @click="goBack">取消</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -108,6 +108,22 @@ const testcaseId = route.params.tid
 const isNew = computed(() => !testcaseId || testcaseId === 'new')
 const isLibrary = computed(() => !route.path.startsWith('/projects/'))
 const loading = ref(false)
+// F7 fix: 表单提交加 saving 状态 + ref + rules；不允许重复点击
+const saving = ref(false)
+const formRef = ref(null)
+// F7 fix: 真实校验规则（不只是 html required 标记）
+const rules = {
+  title: [
+    { required: true, message: '请填写标题', trigger: 'blur' },
+    { min: 1, max: 200, message: '标题长度 1-200', trigger: 'blur' },
+  ],
+  product_line: [
+    { required: true, message: '请选择产品线', trigger: 'change' },
+  ],
+  type: [
+    { required: true, message: '请选择类型', trigger: 'change' },
+  ],
+}
 
 const projectList = ref([])
 const moduleList = ref([])
@@ -160,8 +176,16 @@ function removeStep(idx) {
 }
 
 async function handleSave() {
+  if (saving.value) return
+  try {
+    await formRef.value?.validate()
+  } catch {
+    ElMessage.warning('请检查表单填写')
+    return
+  }
+  saving.value = true
   const data = {
-    title: form.title,
+    title: form.title.trim(),
     description: form.description,
     product_line: form.product_line,
     project: form.project || null,
@@ -183,6 +207,8 @@ async function handleSave() {
     goBack()
   } catch {
     // error already shown by request interceptor
+  } finally {
+    saving.value = false
   }
 }
 

@@ -308,6 +308,8 @@ const execNotes = ref('')
 const attachments = ref([])
 const detailLoading = ref(false)
 const assignmentId = ref(null)
+// F4 fix: 防御 stale response —— 切换节点后只接受最新一次请求的回包
+const pendingDetail = ref(0)
 const taskInfo = ref('')
 const savingNotes = ref(false)
 const uploading = ref(false)
@@ -447,6 +449,9 @@ function toggleTree() {
 async function onNodeClick(node) {
   if (node.type !== 'testcase') return
   detailLoading.value = true
+  // F4 fix: generation token 防 stale response —— 用户连点 A、B、A，三个请求同时飞回，
+  // 先回来的不一定最后点的，会把上一个 case 的状态写到当前选中的 assignment。
+  const reqToken = ++pendingDetail.value
   assignmentId.value = node._assignmentId
   if (node._taskTitle) {
     taskInfo.value = node._taskTitle + (node._taskRound ? ' · ' + node._taskRound : '')
@@ -458,16 +463,18 @@ async function onNodeClick(node) {
       getTestCase(node._tcId),
       getCaseAssignment(node._assignmentId),
     ])
+    if (reqToken !== pendingDetail.value) return  // 已经有更新的请求，丢掉
     fullCase.value = tc
     execStatus.value = node._rawStatus
     approvalStatus.value = node._rawApproval
     execNotes.value = assignment.notes || ''
     attachments.value = assignment.attachments || []
   } catch {
+    if (reqToken !== pendingDetail.value) return
     fullCase.value = null
     attachments.value = []
   }
-  detailLoading.value = false
+  if (reqToken === pendingDetail.value) detailLoading.value = false
 }
 
 async function saveStatus(field) {

@@ -87,12 +87,17 @@ export function isAdminPath(path) {
 }
 
 export function isPathAllowed(user, path) {
+  // F2 fix: 任何不认识的路径都拒绝 —— 不能再 return true 作为兜底，
+  // 防止新加的内部页面忘了配 meta 导致权限门洞开。
+  if (typeof path !== 'string' || !path) return false
+  if (!user) return false
   if (path.startsWith('/login')) return true
   if (isAdminPath(path)) return isAdmin(user)
   if (isProjectsPath(path)) return canAccessProjects(user)
   if (path.startsWith('/testcases')) return canAccessTestCaseLibrary(user)
   if (path.startsWith('/tm')) return canAccessMyProjects(user)
-  return true
+  if (path === '/' || path === '/home') return true
+  return false
 }
 
 /** @deprecated 使用 canAccessProjects */
