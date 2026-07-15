@@ -13,19 +13,27 @@ from apps.defects.models import Defect
 @permission_classes([IsAuthenticated])
 def stats(request):
     project_id = request.query_params.get('project')
-    filter_kwargs = {}
+
+    # SECURITY/C6 修复：TestRun 没有 project 字段（旧代码直接 project_id 触发 FieldError→500）。
+    # 正确路径是 test_run→test_plan→project；TestCase/TestPlan 仍有 project 直接 FK，保持原样。
     if project_id:
-        filter_kwargs = {'project_id': project_id}
+        # 同一份 project_id 字典不能直接复用：分发到正确的字段名上
+        direct_fk_filter = {'project_id': project_id}
+        via_plan_filter = {'test_plan__project_id': project_id}
+    else:
+        direct_fk_filter = {}
+        via_plan_filter = {}
 
     total_projects = Project.objects.count()
-    total_testcases = TestCase.objects.filter(**filter_kwargs).count()
-    total_testplans = TestPlan.objects.filter(**filter_kwargs).count()
+    total_testcases = TestCase.objects.filter(**direct_fk_filter).count()
+    total_testplans = TestPlan.objects.filter(**direct_fk_filter).count()
 
-    testruns_qs = TestRun.objects.filter(**filter_kwargs)
+    testruns_qs = TestRun.objects.filter(**via_plan_filter)
     total_testruns = testruns_qs.count()
 
     if project_id:
-        results_qs = TestResult.objects.filter(test_case__project_id=project_id)
+        # TestResult 走 test_run→test_plan→project 路径更准确（独立 test_case.project 可空）
+        results_qs = TestResult.objects.filter(**via_plan_filter)
     else:
         results_qs = TestResult.objects.all()
 
@@ -47,7 +55,11 @@ def stats(request):
     pending = result_agg['pending']
 
     # Consolidate defect counts into 1 aggregate
-    defect_agg = Defect.objects.filter(**filter_kwargs).aggregate(
+    if project_id:
+        defect_filter = direct_fk_filter
+    else:
+        defect_filter = {}
+    defect_agg = Defect.objects.filter(**defect_filter).aggregate(
         total=Count('id'),
         open=Count('id', filter=Q(status='open')),
         resolved=Count('id', filter=Q(status='resolved')),
@@ -57,11 +69,11 @@ def stats(request):
     resolved_defects = defect_agg['resolved']
 
     # Test cases by priority
-    priority_dist = TestCase.objects.filter(**filter_kwargs).values('priority').annotate(
+    priority_dist = TestCase.objects.filter(**direct_fk_filter).values('priority').annotate(
         count=Count('id')).order_by('priority')
 
     # Test cases by type
-    type_dist = TestCase.objects.filter(**filter_kwargs).values('type').annotate(
+    type_dist = TestCase.objects.filter(**direct_fk_filter).values('type').annotate(
         count=Count('id')).order_by('type')
 
     # Recent test runs
