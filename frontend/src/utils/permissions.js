@@ -8,6 +8,23 @@ export function isAdmin(user) {
   return getRole(user) === ROLE_ADMIN || user?.is_admin === true
 }
 
+// SECURITY (C5 fix): fail-closed. 缺失/未知/空 payload 一律给全 false，
+// 不再 fallback 到 "all true"。前端权限只是 UI 隐藏，
+// 后端必须仍然强校验；这里只是把"前端误以为有空权限"上锁。
+const FLAG_KEYS = [
+  'can_access_projects',
+  'can_access_testcase_library',
+  'can_manage_testcase_library',
+  'can_access_my_projects',
+]
+
+function allFlagsFalse() {
+  return FLAG_KEYS.reduce((acc, k) => {
+    acc[k] = false
+    return acc
+  }, {})
+}
+
 export function getPermissions(user) {
   if (isAdmin(user)) {
     return {
@@ -17,45 +34,20 @@ export function getPermissions(user) {
       can_access_my_projects: true,
     }
   }
-  const p = user?.permissions
-  if (p) {
-    if (getRole(user) === 'viewer') {
-      const hasRead =
-        p.can_access_projects || p.can_access_testcase_library || p.can_access_my_projects
-      if (!hasRead) {
-        return {
-          can_access_projects: true,
-          can_access_testcase_library: true,
-          can_manage_testcase_library: false,
-          can_access_my_projects: true,
-        }
-      }
-    }
-    return p
-  }
-  // 兼容旧数据：测试工程师默认无项目管理
-  if (getRole(user) === 'tester') {
+  if (!user) return allFlagsFalse()
+
+  const p = user.permissions
+  // 只信任显式、由后端返回的 boolean payload
+  if (p && typeof p === 'object') {
     return {
-      can_access_projects: false,
-      can_access_testcase_library: true,
-      can_manage_testcase_library: false,
-      can_access_my_projects: true,
+      can_access_projects: p.can_access_projects === true,
+      can_access_testcase_library: p.can_access_testcase_library === true,
+      can_manage_testcase_library: p.can_manage_testcase_library === true,
+      can_access_my_projects: p.can_access_my_projects === true,
     }
   }
-  if (getRole(user) === 'viewer') {
-    return {
-      can_access_projects: true,
-      can_access_testcase_library: true,
-      can_manage_testcase_library: false,
-      can_access_my_projects: true,
-    }
-  }
-  return {
-    can_access_projects: true,
-    can_access_testcase_library: true,
-    can_manage_testcase_library: true,
-    can_access_my_projects: true,
-  }
+  // 兜底：无 payload 时一律 deny（原代码兜底到 all-true，是 fail-open 漏洞）
+  return allFlagsFalse()
 }
 
 export function isViewer(user) {

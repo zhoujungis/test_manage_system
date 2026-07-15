@@ -39,11 +39,27 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
-    localStorage.clear()
+    // SECURITY: 只清 token key，保留其他用户偏好
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
     token.value = ''
     user.value = null
     router.push('/login')
   }
 
-  return { user, token, ready, init, login, fetchUser, logout }
+  // 由 request.js 单飞 refresh 成功后回调，
+  // 同步 Pinia 内存中的 token，避免 router guard 等拿到过期值。
+  function onTokenRefreshed(access, refresh) {
+    if (access) {
+      token.value = access
+    } else {
+      token.value = ''
+      user.value = null
+    }
+    if (refresh) {
+      localStorage.setItem('refresh_token', refresh)
+    }
+  }
+
+  return { user, token, ready, init, login, fetchUser, logout, onTokenRefreshed }
 })
