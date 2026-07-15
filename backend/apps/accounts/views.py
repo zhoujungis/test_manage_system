@@ -34,6 +34,7 @@ from .throttles import (
     ChangePasswordRateThrottle,
     VerifyCodeRateThrottle,
 )
+from rest_framework.throttling import AnonRateThrottle
 from .email_utils import send_mail_async
 
 CODE_TTL = timedelta(minutes=5)
@@ -93,7 +94,7 @@ def _verify_code(email, code, purpose):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([SendCodeRateThrottle])
+@throttle_classes([AnonRateThrottle, SendCodeRateThrottle])
 def send_code(request):
     email = request.data.get('email', '').strip()
     if not _validate_glazero_email(email):
@@ -110,7 +111,7 @@ def send_code(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([SendResetCodeRateThrottle])
+@throttle_classes([AnonRateThrottle, SendResetCodeRateThrottle])
 def send_reset_code(request):
     email = request.data.get('email', '').strip()
     if not _validate_glazero_email(email):

@@ -76,6 +76,26 @@ class SendResetCodeRateThrottle(SimpleRateThrottle):
         return self.get_ident(request)
 
 
+class RefreshRateThrottle(SimpleRateThrottle):
+    """M4 fix: 限制 /refresh/ 端的暴力 / 滥用调用。
+    Key 仅用 IP —— refresh 端点没有 email 输入，没法做 email+IP 双维度。"""
+    scope = 'refresh'
+
+    def get_cache_key(self, request, view):
+        return self.get_ident(request)
+
+
+class UserDefaultRateThrottle(SimpleRateThrottle):
+    """M14 fix: 已认证用户的全局 throttle。
+    注意：这是全局兜底；具体 endpoint 仍可以用自己的 throttle_classes 收紧。"""
+    scope = 'user'
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            return str(request.user.pk)
+        return self.get_ident(request)
+
+
 class SendCodeRateThrottle(SimpleRateThrottle):
     scope = 'send_code'
 

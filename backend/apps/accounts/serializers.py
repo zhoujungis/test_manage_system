@@ -13,18 +13,25 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         self.fields.pop('username', None)
 
     def validate(self, attrs):
-        email = attrs.get('email', '')
+        email = attrs.get('email', '').strip()
         password = attrs.get('password', '')
 
-        user = User.objects.filter(email=email).first()
-        if not user or not user.is_active:
-            raise serializers.ValidationError('邮箱或密码错误')
+        # H4 fix: 用 iexact 大小写不敏感 + 始终跑 PBKDF2 哈希，让"未知邮箱"和"已知错误密码"
+        # 两条路径的 wall-clock 一致，避免 attacker 通过时间差枚举已注册邮箱。
+        from django.contrib.auth.hashers import check_password, make_password
+        DUMMY_HASH = make_password('', hasher='default')
 
-        authenticated = authenticate(
-            request=self.context.get('request'),
-            username=user.username,
-            password=password,
-        )
+        user = User.objects.filter(email__iexact=email).first()
+        active_user = user if (user and user.is_active) else None
+
+        # 永远跑一次哈希 — 即使 user 是 None 也对照 DUMMY_HASH，让时长与已知用户一致
+        if active_user is not None:
+            hash_valid = active_user.check_password(password)
+            authenticated = active_user if hash_valid else None
+        else:
+            check_password(password, DUMMY_HASH)
+            authenticated = None
+
         if not authenticated:
             raise serializers.ValidationError('邮箱或密码错误')
 

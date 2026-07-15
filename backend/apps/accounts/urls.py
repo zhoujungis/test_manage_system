@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .serializers import CustomTokenObtainPairSerializer
-from .throttles import LoginRateThrottle
+from .throttles import LoginRateThrottle, RefreshRateThrottle
 from . import views
 
 
@@ -10,9 +10,14 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
 
+class ThrottledTokenRefreshView(TokenRefreshView):
+    """M4 fix: refresh 端点显式 throttle_classes。"""
+    throttle_classes = [RefreshRateThrottle]
+
+
 urlpatterns = [
     path('login/', ThrottledTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('refresh/', ThrottledTokenRefreshView.as_view(), name='token_refresh'),
     path('register/', views.register, name='register'),
     path('send-code/', views.send_code, name='send_code'),
     path('send-reset-code/', views.send_reset_code, name='send_reset_code'),

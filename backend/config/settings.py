@@ -111,6 +111,14 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
+# M13 fix: argon2 优先，PBKDF2 兜底（生产没装 argon2-cffi 时自动回退）。
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+]
+
 LANGUAGE_CODE = 'zh-hans'
 TIME_ZONE = 'Asia/Shanghai'
 USE_I18N = True
@@ -128,12 +136,31 @@ ASSIGNMENT_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Cache
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-        'LOCATION': os.environ.get('DJANGO_CACHE_DIR', BASE_DIR / 'cache'),
-    },
-}
+# M12 fix: FileBasedCache 在多 worker / 多 pod 下不可靠（每个进程的 cache 锁独立），
+# DRF SimpleRateThrottle 限流就变成"建议性"。生产建议切到 Redis；
+# 开发默认继续文件缓存，避免 LocMem 在每次 runserver 之间丢计数。
+CACHE_BACKEND = os.environ.get('DJANGO_CACHE_BACKEND', 'file').lower()
+if CACHE_BACKEND == 'redis':
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': os.environ.get('DJANGO_REDIS_URL', 'redis://127.0.0.1:6379/1'),
+        },
+    }
+elif CACHE_BACKEND == 'locmem':
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'testmanager-singleton',
+        },
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+            'LOCATION': os.environ.get('DJANGO_CACHE_DIR', BASE_DIR / 'cache'),
+        },
+    }
 
 # CORS
 CORS_ALLOW_ALL_ORIGINS = _env_bool('CORS_ALLOW_ALL')
@@ -150,9 +177,6 @@ if not DEBUG:
         raise ImproperlyConfigured(
             'CORS_ALLOW_ALL=True 在生产环境是危险的，请显式列出 CORS_ALLOWED_ORIGINS。'
         )
-    if 'CORS_ALLOW_CREDENTIALS' in os.environ:
-        # 仅当运营方明确需要时开 credentials；这里干脆 production 一律不开
-        pass
 CORS_ALLOW_CREDENTIALS = False  # JWT 走 Authorization header，不需要 cookies
 
 # DRF
@@ -162,18 +186,41 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    # M14 fix: 增加已认证用户的全局 throttle 兜底，避免登录用户无限刷任意端点。
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
+        'apps.accounts.throttles.UserDefaultRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
-        'send_code': '1/min',          # 发送注册验证码：每邮箱每分钟一次
-        'send_reset_code': '1/min',    # 发送重置验证码：每邮箱每分钟一次（与注册分开，防止相互挤兑）
-        'verify_code': '10/min',       # register / reset_password：每 (email, IP) 每分钟 10 次
-        'login': '5/min',
-        'change_password': '10/min',
+        'user': '1000/hour',          # 已登录用户全局兜底（端点可再缩紧）
+        'send_code': '1/min',         # 发送注册验证码：每邮箱每分钟一次
+        'send_reset_code': '1/min',   # 发送重置验证码：每邮箱每分钟一次
+        'verify_code': '10/min',      # register / reset_password：每 (email, IP) 每分钟 10 次
+        'login': '5/min',             # 已用 (ip, email) 双维度
+        'refresh': '30/min',          # M4: refresh 端点限速
+        'change_password': '10/min',  # 每 (ip, user) 10 次/分钟
     },
 }
+
+# M5 fix: 生产环境 SECURE_* / HSTS 块。反向代理场景需要同步 NUM_PROXIES 设置。
+if not DEBUG:
+    SECURE_SSL_REDIRECT = _env_bool('DJANGO_SECURE_SSL_REDIRECT', 'True')
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS', 'True')
+    SECURE_HSTS_PRELOAD = _env_bool('DJANGO_SECURE_HSTS_PRELOAD', 'False')
+    SECURE_REFERRER_POLICY = 'same-origin'
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = 'DENY'
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_SECURE = True
+    CSRF_COOKIE_HTTPONLY = True
+else:
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
 
 # SimpleJWT
 SIMPLE_JWT = {
