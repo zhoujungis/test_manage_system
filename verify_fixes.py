@@ -466,3 +466,198 @@ if failures:
     raise SystemExit(1)
 else:
     print('All 7 + C3/D2/D3 + M1/M3/F10/H1/H3/H5 fixes statically verified OK')
+
+
+# =================================================================
+# 第四轮：M4/M5/M12/M13/M14/H6/D7/D8/F1/F2/F4/F7/F16
+# =================================================================
+print('\n\n' + '#' * 60)
+print('# Final sweep verification')
+print('#' * 60)
+
+# ===== M4 / M14 / H6 / throttle =====
+print('\n[M4/M14/H6] throttle 完善 + UserRateThrottle + IP 维度')
+th = (BASE / 'backend/apps/accounts/throttles.py').read_text(encoding='utf-8')
+check('throttles 含 RefreshRateThrottle', 'class RefreshRateThrottle' in th)
+check('throttles 含 UserDefaultRateThrottle', 'class UserDefaultRateThrottle' in th)
+
+urls = (BASE / 'backend/apps/accounts/urls.py').read_text(encoding='utf-8')
+check('urls.py wrap TokenRefreshView 为 ThrottledTokenRefreshView',
+      'class ThrottledTokenRefreshView(TokenRefreshView)' in urls
+      and 'throttle_classes = [RefreshRateThrottle]' in urls)
+
+sv = (BASE / 'backend/config/settings.py').read_text(encoding='utf-8')
+check('DEFAULT_THROTTLE_CLASSES 含 UserDefaultRateThrottle',
+      'apps.accounts.throttles.UserDefaultRateThrottle' in sv)
+check('DEFAULT_THROTTLE_RATES 含 user scope',
+      "'user': '1000/hour'" in sv)
+check('DEFAULT_THROTTLE_RATES 含 refresh scope',
+      "'refresh': '30/min'" in sv)
+check('send_code 同时用 AnonRateThrottle + SendCodeRateThrottle',
+      '@throttle_classes([AnonRateThrottle, SendCodeRateThrottle])' in sv
+      or 'throttle_classes([AnonRateThrottle, SendCodeRateThrottle])' in sv
+      or 'throttle_classes([AnonRateThrottle, SendCodeRateThrottle])'
+          in (BASE / 'backend/apps/accounts/views.py').read_text(encoding='utf-8'))
+
+# ===== M5 SECURE_* =====
+print('\n[M5] SECURE_* 生产硬化')
+check('SECURE_SSL_REDIRECT 设置',
+      'SECURE_SSL_REDIRECT' in sv)
+check('SECURE_HSTS_SECONDS 设置',
+      'SECURE_HSTS_SECONDS' in sv)
+check('SECURE_PROXY_SSL_HEADER 设置',
+      'SECURE_PROXY_SSL_HEADER' in sv)
+check('SESSION_COOKIE_SECURE 在生产环境开启',
+      'SESSION_COOKIE_SECURE = True' in sv)
+
+# ===== M13 PASSWORD_HASHERS =====
+print('\n[M13] argon2 优先 hasher')
+check('PASSWORD_HASHERS 含 Argon2PasswordHasher',
+      'Argon2PasswordHasher' in sv)
+check('PASSWORD_HASHERS 含 PBKDF2 兜底',
+      'PBKDF2PasswordHasher' in sv)
+
+# ===== M12 cache =====
+print('\n[M12] cache backend 可配置')
+check('cache backend 支持 redis 配置',
+      "CACHE_BACKEND == 'redis'" in sv)
+check('cache backend 支持 locmem 兜底',
+      "CACHE_BACKEND == 'locmem'" in sv)
+check('cache backend 默认 file',
+      "'file'" in sv
+      and 'django.core.cache.backends.filebased.FileBasedCache' in sv)
+
+# ===== H4 login dummy hash =====
+print('\n[H4] login timing-safe')
+src_a = (BASE / 'backend/apps/accounts/serializers.py').read_text(encoding='utf-8')
+check('login 用 DUMMY_HASH 兜底',
+      'DUMMY_HASH = make_password(' in src_a
+      and 'check_password(password, DUMMY_HASH)' in src_a)
+check('login 用 iexact 邮箱查找',
+      'email__iexact=' in src_a)
+
+# ===== D7 Meta.ordering =====
+print('\n[D7] Meta.ordering 默认值已清')
+pm_src = (BASE / 'backend/apps/projects/models.py').read_text(encoding='utf-8')
+# 检查 Project / ProjectTask / TestCaseAssignment 的 Meta 不再含 ordering
+for cls_name in ('Project', 'ProjectTask', 'TestCaseAssignment'):
+    tree = ast.parse(pm_src)
+    found = False
+    for n in tree.body:
+        if isinstance(n, ast.ClassDef) and n.name == cls_name:
+            for stmt in n.body:
+                if isinstance(stmt, ast.ClassDef) and stmt.name == 'Meta':
+                    for s in stmt.body:
+                        if isinstance(s, ast.Assign) and any(
+                            isinstance(t, ast.Name) and t.id == 'ordering'
+                            for t in s.targets
+                        ):
+                            found = True
+    check(f'{cls_name}.Meta 不含 ordering',
+          not found, f'{cls_name} 仍有默认 ordering')
+
+# ===== D8 UserProfile 默认 deny =====
+print('\n[D8] UserProfile 默认 deny')
+am = (BASE / 'backend/apps/accounts/models.py').read_text(encoding='utf-8')
+for flag in ('can_access_projects', 'can_access_testcase_library',
+             'can_manage_testcase_library', 'can_access_my_projects'):
+    check(f'UserProfile.{flag} default=False',
+          f'{flag} = models.BooleanField(default=False, verbose_name=' in am)
+
+# ===== F1 路由 meta 守卫 =====
+print('\n[F1] 路由 meta 守卫')
+rj = (BASE / 'frontend/src/router/index.js').read_text(encoding='utf-8')
+check('router 用 hasReadPermission',
+      'hasReadPermission(user, meta.permission)' in rj)
+check('router 用 hasWritePermission',
+      'hasWritePermission(user, meta.writePermission)' in rj)
+check('router meta.admin 守卫',
+      'meta.admin && !isAdmin(user)' in rj)
+
+# ===== F2 isPathAllowed fail-closed =====
+print('\n[F2] isPathAllowed fail-closed')
+pj = (BASE / 'frontend/src/utils/permissions.js').read_text(encoding='utf-8')
+check('isPathAllowed 处理 null user',
+      'if (!user) return false' in pj)
+
+
+def _isPathAllowed_returns(text):
+    """只统计 isPathAllowed 函数体内实际的 return 语句（排除注释行）。"""
+    i = text.find('export function isPathAllowed')
+    if i < 0:
+        return []
+    j = text.find('\nexport ', i + 1)
+    body = text[i:j] if j > 0 else text[i:]
+    returns = []
+    for ln in body.splitlines():
+        s = ln.strip()
+        if s.startswith('//') or s.startswith('/*') or s.startswith('*'):
+            continue
+        if 'return ' in s and not s.lstrip().startswith('//'):
+            returns.append(s)
+    return returns
+
+
+returns_in_ipa = _isPathAllowed_returns(pj)
+check('isPathAllowed 末尾兜底是 false（fail-closed）',
+      returns_in_ipa and returns_in_ipa[-1].strip() == 'return false',
+      f'isPathAllowed 末尾: {returns_in_ipa[-1] if returns_in_ipa else "<empty>"}')
+check('isPathAllowed 中 return true 仅出现在允许名单分支',
+      sum(1 for r in returns_in_ipa if 'return true' in r) == 2,
+      f'实际 true 出现 {sum(1 for r in returns_in_ipa if "return true" in r)} 次; 详情:\n  '
+      + '\n  '.join(returns_in_ipa))
+
+# ===== F4 AbortController / gen-token =====
+print('\n[F4] generation token 防 stale response')
+mtev = (BASE / 'frontend/src/views/MyTestExecuteView.vue').read_text(encoding='utf-8')
+check('MyTestExecuteView 用 pendingDetail generation token',
+      'pendingDetail' in mtev and 'reqToken = ++pendingDetail.value' in mtev)
+
+# ===== F7 表单 validate =====
+print('\n[F7] 表单校验')
+tcd = (BASE / 'frontend/src/views/TestCaseDetailView.vue').read_text(encoding='utf-8')
+check('TestCaseDetailView 引入 formRef',
+      'formRef' in tcd)
+check('TestCaseDetailView 引入 rules',
+      'const rules = ' in tcd)
+check('TestCaseDetailView handleSave validate()',
+      'formRef.value?.validate' in tcd)
+check('TestCaseDetailView saving 状态锁',
+      'saving.value = true' in tcd and 'saving.value = false' in tcd)
+
+# ===== F16 全局错误处理 =====
+print('\n[F16] 全局 Vue 错误处理')
+mj = (BASE / 'frontend/src/main.js').read_text(encoding='utf-8')
+check('main.js 含 app.config.errorHandler',
+      'app.config.errorHandler' in mj)
+
+# ===== CI =====
+print('\n[CI] GitHub workflows 存在')
+check('backend.yml workflow 存在',
+      (BASE / '.github/workflows/backend.yml').exists())
+check('frontend.yml workflow 存在',
+      (BASE / '.github/workflows/frontend.yml').exists())
+
+# ===== 语法 =====
+print('\n[语法]')
+for f in (
+    'backend/apps/accounts/throttles.py',
+    'backend/apps/accounts/urls.py',
+    'backend/apps/projects/models.py',
+    'backend/apps/accounts/models.py',
+):
+    try:
+        ast.parse((BASE / f).read_text(encoding='utf-8'))
+        print(f'  OK   {f}')
+    except SyntaxError as e:
+        print(f'  FAIL {f}: {e}')
+        failures.append((f, str(e)))
+
+print('\n' + '=' * 60)
+if failures:
+    print(f'{len(failures)} checks failed:')
+    for label, detail in failures:
+        print(f'  - {label}: {detail}')
+    raise SystemExit(1)
+else:
+    print('Full sweep verification OK')
