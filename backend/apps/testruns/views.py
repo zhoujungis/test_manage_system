@@ -5,20 +5,36 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from apps.accounts.permissions import is_admin, user_can_access_projects
 from .models import TestRun, TestResult
 from .serializers import (TestRunListSerializer, TestRunDetailSerializer,
                           TestResultSerializer, TestResultUpdateSerializer)
+
+
+def _accessible_project_ids(user):
+    """返回用户能访问的项目 id 列表。
+    - admin / 有项目管理权限的用户：None（不限）
+    - 其他：仅作为 ProjectMember 的项目
+    """
+    if is_admin(user) or user_can_access_projects(user):
+        return None
+    from apps.projects.models import Project
+    return list(Project.objects.filter(members__user=user).values_list('id', flat=True))
 
 
 class TestRunViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = TestRun.objects.select_related('test_plan', 'created_by').annotate(
-            total=Count('results'),
-            passed=Count('results', filter=Q(results__status='pass')),
-            failed=Count('results', filter=Q(results__status='fail')),
-        ).all()
+        qs = TestRun.objects.select_related('test_plan', 'test_plan__project', 'created_by').annotate(
+            total=Count('results', distinct=True),
+            passed=Count('results', filter=Q(results__status='pass'), distinct=True),
+            failed=Count('results', filter=Q(results__status='fail'), distinct=True),
+        )
+        # SECURITY: 非管理类用户只能看到自己有成员关系的项目下的测试执行（C4）
+        scoped = _accessible_project_ids(self.request.user)
+        if scoped is not None:
+            qs = qs.filter(test_plan__project_id__in=scoped)
         plan_id = self.request.query_params.get('plan')
         project_id = self.request.query_params.get('project')
         if plan_id:
