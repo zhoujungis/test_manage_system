@@ -111,25 +111,38 @@ print('\n[C6] dashboard 修 TestRun project 路径')
 dv = (BASE / 'backend/apps/dashboard/views.py').read_text(encoding='utf-8').replace('\r\n', '\n')
 check('使用 test_plan__project_id',
       'test_plan__project_id' in dv)
-check('使用 via_plan_filter',
-      'via_plan_filter' in dv)
 check('不再存在裸 TestRun.objects.filter(project_id=…)',
       'TestRun.objects.filter(project_id=' not in dv,
       'still using buggy project_id filter on TestRun')
 
 
-# === C4 ===
-print('\n[C4] 三 viewset 加 get_queryset 项目范围')
+# === C4 + C1/C2 IDOR intersection ===
+print('\n[C4] 三 viewset 加 get_queryset 项目范围 + drill-down 交集守卫')
 for app in ('testplans', 'testruns', 'defects'):
     v = (BASE / f'backend/apps/{app}/views.py').read_text(encoding='utf-8').replace('\r\n', '\n')
-    check(f'{app}/views.py 定义 _accessible_project_ids',
-          'def _accessible_project_ids' in v)
-    check(f'{app}/views.py 用 ProjectMember 范围',
-          'Project.objects.filter(members__user=user)' in v)
-    check(f'{app}/views.py 在 get_queryset 应用 scoped 过滤',
-          '_accessible_project_ids(self.request.user)' in v
-          and ('project_id__in=scoped' in v
-               or 'test_plan__project_id__in=scoped' in v))
+    check(f'{app}/views.py 引用 centralized accessible_project_ids',
+          'from apps.accounts.permissions import accessible_project_ids' in v
+          and 'accessible_project_ids(self.request.user)' in v)
+    check(f'{app}/views.py 不再含本地 _accessible_project_ids',
+          'def _accessible_project_ids' not in v,
+          '本地 helper 应统一迁移到 accounts.permissions.accessible_project_ids')
+    check(f'{app}/views.py scoped 过滤用 project_id__in',
+          'project_id__in=scoped' in v
+          or 'test_plan__project_id__in=scoped' in v)
+    # C1/C2 fix: ?project= drill-down 必须落在 scope 内
+    check(f'{app}/views.py drill-down 与 scope 取交集（防 IDOR）',
+          ('project_id=project_id, project_id__in=scoped' in v)
+          or ('test_plan__project_id=project_id,\n                    test_plan__project_id__in=scoped' in v)
+          or ('test_plan__project_id=project_id,\n                test_plan__project_id__in=scoped' in v))
+
+
+# === C1 dashboard drill-down 交集 ===
+print('\n[C1] dashboard drill-down 防 IDOR 交集')
+dv_intersect = (
+    'project_id=project_id, project_id__in=scoped' in dv
+    and 'test_plan__project_id=project_id,\n                test_plan__project_id__in=scoped' in dv
+)
+check('dashboard drill-down Q(project_id=...) ∩ scope', dv_intersect)
 
 
 # === C5 ===

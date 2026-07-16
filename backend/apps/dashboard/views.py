@@ -2,6 +2,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Count, Q
+from apps.accounts.permissions import accessible_project_ids
 from apps.projects.models import Project
 from apps.testcases.models import TestCase
 from apps.testplans.models import TestPlan
@@ -12,30 +13,42 @@ from apps.defects.models import Defect
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def stats(request):
-    project_id = request.query_params.get('project')
-
-    # SECURITY/C6 修复：TestRun 没有 project 字段（旧代码直接 project_id 触发 FieldError→500）。
-    # 正确路径是 test_run→test_plan→project；TestCase/TestPlan 仍有 project 直接 FK，保持原样。
-    if project_id:
-        # 同一份 project_id 字典不能直接复用：分发到正确的字段名上
-        direct_fk_filter = {'project_id': project_id}
-        via_plan_filter = {'test_plan__project_id': project_id}
+    scoped = accessible_project_ids(request.user)
+    if scoped is None:
+        # admin / 有项目管理权限 → 不限
+        proj_q = Q()
+        plan_q = Q()
+        via_plan_q = Q()
     else:
-        direct_fk_filter = {}
-        via_plan_filter = {}
+        proj_q = Q(project_id__in=scoped)
+        plan_q = Q(project_id__in=scoped)
+        via_plan_q = Q(test_plan__project_id__in=scoped)
 
-    total_projects = Project.objects.count()
-    total_testcases = TestCase.objects.filter(**direct_fk_filter).count()
-    total_testplans = TestPlan.objects.filter(**direct_fk_filter).count()
+    project_id = request.query_params.get('project')
+    if project_id:
+        # C1 fix: ?project= drill-down 必须落在 scope 内，做交集防止 IDOR
+        # （之前直接 Q(project_id=project_id) 覆盖了 scope 过滤）
+        if scoped is None:
+            proj_q = Q(project_id=project_id)
+            plan_q = Q(project_id=project_id)
+            via_plan_q = Q(test_plan__project_id=project_id)
+        else:
+            proj_q = Q(project_id=project_id, project_id__in=scoped)
+            plan_q = Q(project_id=project_id, project_id__in=scoped)
+            via_plan_q = Q(
+                test_plan__project_id=project_id,
+                test_plan__project_id__in=scoped,
+            )
 
-    testruns_qs = TestRun.objects.filter(**via_plan_filter)
+    total_projects = Project.objects.filter(proj_q).count()
+    total_testcases = TestCase.objects.filter(proj_q).count()
+    total_testplans = TestPlan.objects.filter(plan_q).count()
+
+    testruns_qs = TestRun.objects.filter(via_plan_q)
     total_testruns = testruns_qs.count()
 
-    if project_id:
-        # TestResult 走 test_run→test_plan→project 路径更准确（独立 test_case.project 可空）
-        results_qs = TestResult.objects.filter(**via_plan_filter)
-    else:
-        results_qs = TestResult.objects.all()
+    # TestResult 走 test_run→test_plan→project 路径更准确（独立 test_case.project 可空）
+    results_qs = TestResult.objects.filter(via_plan_q)
 
     # Consolidate 5 status count queries into 1 aggregate
     result_agg = results_qs.aggregate(
@@ -55,11 +68,7 @@ def stats(request):
     pending = result_agg['pending']
 
     # Consolidate defect counts into 1 aggregate
-    if project_id:
-        defect_filter = direct_fk_filter
-    else:
-        defect_filter = {}
-    defect_agg = Defect.objects.filter(**defect_filter).aggregate(
+    defect_agg = Defect.objects.filter(proj_q).aggregate(
         total=Count('id'),
         open=Count('id', filter=Q(status='open')),
         resolved=Count('id', filter=Q(status='resolved')),
@@ -69,11 +78,11 @@ def stats(request):
     resolved_defects = defect_agg['resolved']
 
     # Test cases by priority
-    priority_dist = TestCase.objects.filter(**direct_fk_filter).values('priority').annotate(
+    priority_dist = TestCase.objects.filter(proj_q).values('priority').annotate(
         count=Count('id')).order_by('priority')
 
     # Test cases by type
-    type_dist = TestCase.objects.filter(**direct_fk_filter).values('type').annotate(
+    type_dist = TestCase.objects.filter(proj_q).values('type').annotate(
         count=Count('id')).order_by('type')
 
     # Recent test runs

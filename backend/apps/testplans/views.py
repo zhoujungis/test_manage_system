@@ -3,20 +3,9 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.accounts.permissions import is_admin, user_can_access_projects
+from apps.accounts.permissions import accessible_project_ids
 from .models import TestPlan, TestPlanCase
 from .serializers import TestPlanListSerializer, TestPlanDetailSerializer
-
-
-def _accessible_project_ids(user):
-    """返回用户能访问的项目 id 列表。
-    - admin / 有项目管理权限的用户：None（不限）
-    - 其他：仅作为 ProjectMember 的项目
-    """
-    if is_admin(user) or user_can_access_projects(user):
-        return None
-    from apps.projects.models import Project
-    return list(Project.objects.filter(members__user=user).values_list('id', flat=True))
 
 
 class TestPlanViewSet(viewsets.ModelViewSet):
@@ -27,12 +16,16 @@ class TestPlanViewSet(viewsets.ModelViewSet):
             case_count=Count('plan_cases'),
         )
         # SECURITY: 非管理类用户只能看到自己有成员关系的项目下的计划（C4）
-        scoped = _accessible_project_ids(self.request.user)
+        scoped = accessible_project_ids(self.request.user)
         if scoped is not None:
             qs = qs.filter(project_id__in=scoped)
         project_id = self.request.query_params.get('project')
         if project_id:
-            qs = qs.filter(project_id=project_id)
+            # C2 fix: ?project= 必须落在 scope 内，做交集防止 IDOR
+            if scoped is not None:
+                qs = qs.filter(project_id=project_id, project_id__in=scoped)
+            else:
+                qs = qs.filter(project_id=project_id)
         return qs
 
     def get_serializer_class(self):
