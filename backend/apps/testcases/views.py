@@ -62,7 +62,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
         if priority:
             qs = qs.filter(priority=priority)
         if type_filter:
-            qs = qs.filter(type=type_filter)
+            qs = qs.filter(case_type=type_filter)  # 字段名迁移 type→case_type (M4 fix)
         if product_line:
             qs = qs.filter(product_line=product_line)
         if search:
@@ -101,10 +101,11 @@ def testcase_tree(request):
         return Response({'error': 'product_line is required'}, status=400)
 
     qs = TestCase.objects.select_related('module').filter(product_line=product_line)
-    for f in ('priority', 'type', 'status'):
-        v = request.query_params.get(f)
+    # query param 名 (API 契约) ≠ 模型字段名：M4 fix 后字段是 case_type
+    for param, field in (('priority', 'priority'), ('type', 'case_type'), ('status', 'status')):
+        v = request.query_params.get(param)
         if v:
-            qs = qs.filter(**{f: v})
+            qs = qs.filter(**{field: v})
 
     try:
         limit = min(int(request.query_params.get('limit', '500')), 2000)
@@ -117,7 +118,7 @@ def testcase_tree(request):
             'id': tc.id,
             'title': tc.title,
             'priority': tc.priority,
-            'type': tc.type,
+            'type': tc.case_type,  # 模型字段 case_type，JSON 键保持 'type'（API 契约）
             'status': tc.status,
             'module_id': tc.module_id,
             'module_name': tc.module.name if tc.module else None,

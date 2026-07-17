@@ -98,7 +98,7 @@ def import_row(project, module, feature, title, priority, tc_type, precond, step
     tc = TestCase.objects.create(
         product_line='camera', project=project, module=module,
         title=title, description=feature or '', priority=priority,
-        type=tc_type, status='active', preconditions=precond,
+        case_type=tc_type, status='active', preconditions=precond,
     )
 
     step_map = parse_numbered_items(steps_text or '')
