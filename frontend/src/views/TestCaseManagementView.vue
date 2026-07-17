@@ -325,7 +325,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   padding: 16px;
-  background: #f8fafc;
+  background: var(--tm-surface-2);
 }
 .tc-right {
   flex: 1;

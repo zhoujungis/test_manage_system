@@ -1,39 +1,72 @@
-// H39 fix: 统一项目内的日期显示格式。原先 4-5 个 view 各用各的：
-//   - row.created_at?.slice(0, 19).replace('T', ' ')
-//   - new Date(d).toLocaleString('zh-CN', {...})
-//   - 原始 YYYY-MM-DD 字符串
-// 后端时区是 Asia/Shanghai，这里统一显示为本地时间并标上时区。
+// H39 fix: 统一日期格式 + I18N-5: 跟随 locale。
+// zh-CN → 'YYYY-MM-DD HH:mm (北京时间)'
+// en-US → 'MM/DD/YYYY, HH:mm'
+//
+// 注意：standalone 函数读 localStorage('tm_locale') 来决定格式；
+// 在 setup() 里用 `useDateFormat()` 更准确（响应式）。
 
-const TZ = 'Asia/Shanghai'
-const ZONE_SUFFIX = ' (北京时间)'
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
-/** 把 ISO 字符串 / Date 转成 'YYYY-MM-DD HH:mm' 本地时间字符串。 */
+let _cachedLocale = null
+let _tzLabel = '北京时间'
+
+function currentLocale() {
+  if (_cachedLocale) return _cachedLocale
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem('tm_locale')
+    if (saved) _cachedLocale = saved
+  }
+  return _cachedLocale || 'zh-CN'
+}
+
+/** setLocale() 调用时同步刷新缓存。 */
+export function _syncDateFormatLocale(locale, tz) {
+  _cachedLocale = locale
+  if (tz) _tzLabel = tz
+}
+
+// ---- 内部 ----
+function _format(input, mode) {
+  if (!input) return '-'
+  const d = input instanceof Date ? input : new Date(input)
+  if (Number.isNaN(d.getTime())) return String(input)
+  const pad = (n) => String(n).padStart(2, '0')
+  const locale = currentLocale()
+  if (locale === 'en-US') {
+    if (mode === 'date') {
+      return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`
+    }
+    return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  if (mode === 'date') {
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// ---- standalone exports ----
 export function formatDateTime(input) {
-  if (!input) return '-'
-  const d = input instanceof Date ? input : new Date(input)
-  if (Number.isNaN(d.getTime())) return String(input)
-  const pad = (n) => String(n).padStart(2, '0')
-  return (
-    d.getFullYear() + '-' +
-    pad(d.getMonth() + 1) + '-' +
-    pad(d.getDate()) + ' ' +
-    pad(d.getHours()) + ':' +
-    pad(d.getMinutes())
-  )
+  return _format(input, 'datetime')
 }
-
-/** 'YYYY-MM-DD' 纯日期。 */
 export function formatDate(input) {
-  if (!input) return '-'
-  const d = input instanceof Date ? input : new Date(input)
-  if (Number.isNaN(d.getTime())) return String(input)
-  const pad = (n) => String(n).padStart(2, '0')
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+  return _format(input, 'date')
 }
-
-/** 带时区提示的完整日期时间。 */
 export function formatDateTimeWithTz(input) {
-  return formatDateTime(input) + ZONE_SUFFIX
+  return _format(input, 'datetime') + ' ' + _tzLabel
 }
 
-export { TZ }
+// ---- composable for setup() context ----
+export function useDateFormat() {
+  const { locale, t } = useI18n()
+  // 监听 i18n locale 变化时刷新 standalone 缓存
+  if (locale.value) _cachedLocale = locale.value
+  const formatted = computed(() => {
+    return {
+      formatDateTime: (input) => _format(input, 'datetime'),
+      formatDate: (input) => _format(input, 'date'),
+      formatDateTimeWithTz: (input) => _format(input, 'datetime') + ' ' + t('common.beijingTime'),
+    }
+  })
+  return formatted
+}

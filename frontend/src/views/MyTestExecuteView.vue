@@ -671,18 +671,18 @@ onBeforeUnmount(() => {
 }
 
 .exec-stat--pass {
-  background: #ecfdf5;
-  color: #059669;
+  background: var(--tm-stat-pass-bg);
+  color: var(--tm-stat-pass-fg);
 }
 
 .exec-stat--fail {
-  background: #fef2f2;
-  color: #dc2626;
+  background: var(--tm-stat-fail-bg);
+  color: var(--tm-stat-fail-fg);
 }
 
 .exec-stat--pending {
-  background: #eff6ff;
-  color: #2563eb;
+  background: var(--tm-stat-pending-bg);
+  color: var(--tm-stat-pending-fg);
 }
 
 .exec-body {
@@ -704,7 +704,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--tm-border);
-  background: #f8fafc;
+  background: var(--tm-surface-2);
 }
 
 .exec-sidebar__toolbar {
@@ -826,7 +826,7 @@ onBeforeUnmount(() => {
 }
 
 .exec-info-card {
-  background: #f8fafc;
+  background: var(--tm-surface-2);
   border: 1px solid var(--tm-border);
   border-radius: var(--tm-radius);
   padding: 16px;
@@ -866,7 +866,7 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 14px;
   padding: 14px 16px;
-  background: #f8fafc;
+  background: var(--tm-surface-2);
   border: 1px solid var(--tm-border);
   border-radius: var(--tm-radius);
 }
@@ -908,7 +908,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
-  background: #e2e8f0;
+  background: var(--tm-border);
   color: var(--tm-text-secondary);
   margin-right: 8px;
 }
@@ -929,7 +929,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  background: #f8fafc;
+  background: var(--tm-surface-2);
   border: 1px solid var(--tm-border);
   border-radius: var(--tm-radius);
 }

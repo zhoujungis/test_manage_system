@@ -48,23 +48,28 @@
 // H23 fix: 之前 LoginView 555 行 4 张表单 + 4 套 cooldown + 4 套 validator 全堆在一起。
 // 现在拆出 AuthFormLogin / AuthFormRegister / AuthFormForgot / AuthFormChange
 // 四个子组件，本文件只负责 shell + tab 路由。
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Monitor, Document, FolderOpened, VideoPlay } from '@element-plus/icons-vue'
 import AuthFormLogin from './AuthFormLogin.vue'
 import AuthFormRegister from './AuthFormRegister.vue'
 import AuthFormForgot from './AuthFormForgot.vue'
 import AuthFormChange from './AuthFormChange.vue'
 
+const { t } = useI18n()
 const activeTab = ref('login')
-const tabTitles = {
-  login: '欢迎登录', register: '创建账号', forgot: '找回密码', change: '修改密码',
-}
-const tabDescs = {
-  login: '请使用 @glazero.com 邮箱登录',
-  register: '注册成功后会自动分配测试工程师角色',
-  forgot: '通过邮箱验证码重置您的密码',
-  change: '登录后可通过邮箱 + 原密码修改',
-}
+const tabTitles = computed(() => ({
+  login: t('auth.titleLogin'),
+  register: t('auth.titleRegister'),
+  forgot: t('auth.titleForgot'),
+  change: t('auth.titleChange'),
+}))
+const tabDescs = computed(() => ({
+  login: t('auth.descLogin'),
+  register: t('auth.descRegister'),
+  forgot: t('auth.descForgot'),
+  change: t('auth.descChange'),
+}))
 
 function onPrefill({ email }) {
   // 注册 / 重置 / 修改密码成功后跳回登录 tab 并预填邮箱

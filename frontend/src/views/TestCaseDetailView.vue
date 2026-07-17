@@ -75,7 +75,7 @@
           <el-input v-model="form.description" type="textarea" :rows="3" />
         </el-form-item>
         <el-form-item label="测试步骤">
-          <div v-for="(step, idx) in form.steps" :key="idx" style="margin-bottom: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px">
+          <div v-for="(step, idx) in form.steps" :key="idx" style="margin-bottom: 12px; padding: 12px; background: var(--tm-surface-2); border-radius: 4px">
             <el-row :gutter="12">
               <el-col :span="2"><el-tag>步骤{{ idx + 1 }}</el-tag></el-col>
               <el-col :span="10"><el-input v-model="step.action" placeholder="操作步骤" maxlength="500" /></el-col>

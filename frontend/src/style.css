@@ -17,6 +17,20 @@
   --tm-border: #e2e8f0;
   --tm-border-light: #f1f5f9;
 
+  --tm-selected-row-bg: #ecf5ff;
+
+  /* 状态徽章 — 浅色主题用淡彩底 + 深字 */
+  --tm-stat-pass-bg: #ecfdf5;
+  --tm-stat-pass-fg: #059669;
+  --tm-stat-fail-bg: #fef2f2;
+  --tm-stat-fail-fg: #dc2626;
+  --tm-stat-pending-bg: #eff6ff;
+  --tm-stat-pending-fg: #2563eb;
+  --tm-stat-neutral-bg: #f8fafc;
+  --tm-stat-neutral-fg: #64748b;
+  --tm-stat-blocked-bg: #f8fafc;
+  --tm-stat-blocked-fg: #475569;
+
   --tm-text: #0f172a;
   --tm-text-secondary: #64748b;
   --tm-text-muted: #94a3b8;
@@ -67,6 +81,20 @@
   --tm-surface-2: #182338;
   --tm-border: #243149;
   --tm-border-light: #182338;
+
+  --tm-selected-row-bg: #1c2a4a;
+
+  /* 状态徽章 — 暗色主题用深底 + 亮字 */
+  --tm-stat-pass-bg: #0e2a1f;
+  --tm-stat-pass-fg: #34d399;
+  --tm-stat-fail-bg: #2d1518;
+  --tm-stat-fail-fg: #f87171;
+  --tm-stat-pending-bg: #15233f;
+  --tm-stat-pending-fg: #93c5fd;
+  --tm-stat-neutral-bg: #182338;
+  --tm-stat-neutral-fg: #94a3b8;
+  --tm-stat-blocked-bg: #1f1d2c;
+  --tm-stat-blocked-fg: #c4b5fd;
 
   --tm-text: #e2e8f0;
   --tm-text-secondary: #94a3b8;
@@ -308,7 +336,7 @@ body {
 /* M36 fix: 表格行选中态高亮（PersonalProjectsView 等使用） */
 .el-table__row.selected-row,
 .el-table__row.selected-row td.el-table__cell {
-  background-color: #ecf5ff !important;
+  background-color: var(--tm-selected-row-bg) !important;
 }
 
 .el-empty {

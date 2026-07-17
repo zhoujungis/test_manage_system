@@ -29,6 +29,10 @@ export function setLocale(locale) {
   i18n.global.locale.value = locale
   localStorage.setItem(STORAGE_KEY, locale)
   document.documentElement.lang = locale
+  // I18N-5: 同步刷新 dateFormat 的 locale 缓存
+  import('@/utils/dateFormat').then(({ _syncDateFormatLocale }) => {
+    _syncDateFormatLocale(locale)
+  })
 }
 
 export function getLocale() {
