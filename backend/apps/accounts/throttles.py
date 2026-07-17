@@ -94,30 +94,3 @@ class UserDefaultRateThrottle(SimpleRateThrottle):
         if request.user and request.user.is_authenticated:
             return str(request.user.pk)
         return self.get_ident(request)
-
-
-class SendCodeRateThrottle(SimpleRateThrottle):
-    scope = 'send_code'
-
-    def get_cache_key(self, request, view):
-        email = request.data.get('email', '')
-        if email:
-            return f'send_code_{email}'
-        return self.get_ident(request)
-
-
-class LoginRateThrottle(SimpleRateThrottle):
-    scope = 'login'
-
-    def get_cache_key(self, request, view):
-        return self.get_ident(request)
-
-
-class ChangePasswordRateThrottle(SimpleRateThrottle):
-    """对 change_password 端点限流（认证用户）。"""
-    scope = 'change_password'
-
-    def get_cache_key(self, request, view):
-        if request.user and request.user.is_authenticated:
-            return self.get_ident(request) + ':' + str(request.user.pk)
-        return self.get_ident(request)

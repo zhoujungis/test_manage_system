@@ -110,6 +110,20 @@ def is_tester(user):
     return get_user_role(user) == 'tester'
 
 
+def accessible_project_ids(user):
+    """返回 user 能访问的项目 id 列表。
+
+    - admin / 有项目管理权限的用户：返回 None（不限）
+    - 其他：仅作为 ProjectMember 的项目
+
+    返回 None 时调用方应理解为"不过滤"。
+    """
+    if is_admin(user) or user_can_access_projects(user):
+        return None
+    from apps.projects.models import Project
+    return list(Project.objects.filter(members__user=user).values_list('id', flat=True))
+
+
 class IsAdmin(BasePermission):
     message = '仅管理员可执行此操作'
 
