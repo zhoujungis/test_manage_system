@@ -256,3 +256,37 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* ===== Mobile responsive (H38) ===== */
+@media (max-width: 768px) {
+  :root {
+    /* 让窄屏侧栏宽度更窄，给内容腾位置 */
+    --tm-sidebar-width: 56px;
+  }
+  .app-shell__main {
+    padding: 12px;
+  }
+  .page-header h2 {
+    font-size: 18px;
+  }
+  .el-button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .filter-card {
+    padding: 12px;
+  }
+  /* 表格在窄屏加横向滚动条，而不是溢出布局 */
+  .el-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  /* 表单字段默认占满 */
+  .el-form-item .el-input,
+  .el-form-item .el-select,
+  .el-form-item .el-date-editor {
+    width: 100% !important;
+    max-width: none;
+  }
+}

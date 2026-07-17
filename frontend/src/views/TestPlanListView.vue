@@ -139,7 +139,14 @@ async function handleSave() {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm('确定删除该计划？', '提示', { type: 'warning' })
+  try {
+    // H40 fix: 提示级联影响 —— 计划删除会让所有 plan_cases 一并删除
+    await ElMessageBox.confirm(
+      `确定删除测试计划「${row.name}」？该计划下的 ${row.case_count ?? 0} 条用例关联将被一并删除。`,
+      '删除确认',
+      { type: 'warning' },
+    )
+  } catch { return }
   await deleteTestPlan(row.id)
   ElMessage.success('删除成功')
   fetchData()

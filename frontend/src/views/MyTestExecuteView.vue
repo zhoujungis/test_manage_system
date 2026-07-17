@@ -381,9 +381,11 @@ async function loadData() {
     projectName.value = proj.name
     const params = { assigned_to: filterAssignee.value }
     if (filterTask.value) params.task_id = filterTask.value
-    if (filterStatus.value.length < 5) params.status = filterStatus.value.join(',')
-    if (filterPriority.value.length < 4) params.priority = filterPriority.value.join(',')
-    if (filterApproval.value.length < 3) params.approval_status = filterApproval.value.join(',')
+    // H41 fix: 反转过滤语义 —— 之前「< 5 个就不过滤」意味着「uncheck 全部 = 不过滤 = 显示全部」，
+    // 反直觉。现在统一：勾选列表 = 包含；空 = 不传该 filter（不过滤）。
+    if (filterStatus.value.length) params.status = filterStatus.value.join(',')
+    if (filterPriority.value.length) params.priority = filterPriority.value.join(',')
+    if (filterApproval.value.length) params.approval_status = filterApproval.value.join(',')
     const items = await getCaseAssignments(projectId, params)
     totalCases.value = items.length
     computeStats(items)
