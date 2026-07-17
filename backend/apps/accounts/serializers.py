@@ -1,8 +1,19 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, password_validation
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import UserProfile, apply_role_default_permissions
+
+
+def _validate_password_strength(password, user=None):
+    """C5 fix: 强制跑 AUTH_PASSWORD_VALIDATORS。
+
+    User.objects.create_user() 不会触发 validators；之前注册/重置/管理创建
+    都能用 123456 这种弱密码。集中到这一处保证所有写密码的 serializer
+    都走统一校验。
+    """
+    password_validation.validate_password(password, user=user)
+    return password
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -18,8 +29,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # H4 fix: 用 iexact 大小写不敏感 + 始终跑 PBKDF2 哈希，让"未知邮箱"和"已知错误密码"
         # 两条路径的 wall-clock 一致，避免 attacker 通过时间差枚举已注册邮箱。
+        # 注: hasher 必须显式指定 pbkdf2_sha256，不能用 'default' —— 若 PASSWORD_HASHERS
+        # 把 Argon2PasswordHasher 排第一且 argon2-cffi 未装，'default' 会触发
+        # ValueError: Couldn't load 'Argon2PasswordHasher' (M13 配套 requirement 缺失)。
         from django.contrib.auth.hashers import check_password, make_password
-        DUMMY_HASH = make_password('', hasher='default')
+        DUMMY_HASH = make_password('', hasher='pbkdf2_sha256')
 
         user = User.objects.filter(email__iexact=email).first()
         active_user = user if (user and user.is_active) else None
@@ -165,6 +179,11 @@ class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=6)
 
+    def validate_new_password(self, value):
+        # C5 fix: 走 AUTH_PASSWORD_VALIDATORS
+        user = self.context.get('request') and self.context['request'].user
+        return _validate_password_strength(value, user=getattr(user, '_wrapped', user) if user else None)
+
     def validate(self, attrs):
         user = self.context['request'].user
         if not user or not user.is_authenticated:
@@ -184,6 +203,14 @@ class ResetPasswordSerializer(serializers.Serializer):
         if not value.endswith('@glazero.com'):
             raise serializers.ValidationError('仅允许 @glazero.com 邮箱')
         return value
+
+    def validate_password(self, value):
+        # C5 fix: 走 AUTH_PASSWORD_VALIDATORS；用 self.initial_data 拿到 email 上下文
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        email = (self.initial_data.get('email') or '').strip()
+        u = User.objects.filter(email__iexact=email).first() if email else None
+        return _validate_password_strength(value, user=u)
 
 
 class AdminCreateUserSerializer(serializers.ModelSerializer):
@@ -214,6 +241,12 @@ class AdminCreateUserSerializer(serializers.ModelSerializer):
         if value == 'admin':
             raise serializers.ValidationError('不能通过此接口创建管理员账号')
         return value
+
+    def validate_password(self, value):
+        # C5 fix: 走 AUTH_PASSWORD_VALIDATORS（管理员创建也要守强度底线）
+        email = (self.initial_data.get('email') or '').strip()
+        u = User.objects.filter(email__iexact=email).first() if email else None
+        return _validate_password_strength(value, user=u)
 
     def create(self, validated_data):
         role = validated_data.pop('role')
@@ -246,6 +279,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError('该邮箱已被注册')
         return value
+
+    def validate_password(self, value):
+        # C5 fix: 走 AUTH_PASSWORD_VALIDATORS（user 尚未存在，传 None）
+        return _validate_password_strength(value)
 
     def create(self, validated_data):
         role = self.DEFAULT_ROLE

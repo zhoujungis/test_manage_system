@@ -16,10 +16,12 @@ def stats(request):
     scoped = accessible_project_ids(request.user)
     if scoped is None:
         # admin / 有项目管理权限 → 不限
-        proj_q = Q()
+        proj_pk_q = Q()      # Project 主键过滤 (id)
+        proj_q = Q()         # 外键 project_id 过滤 (TestCase/TestPlan/Defect)
         plan_q = Q()
         via_plan_q = Q()
     else:
+        proj_pk_q = Q(id__in=scoped)              # Project 用 pk
         proj_q = Q(project_id__in=scoped)
         plan_q = Q(project_id__in=scoped)
         via_plan_q = Q(test_plan__project_id__in=scoped)
@@ -28,11 +30,15 @@ def stats(request):
     if project_id:
         # C1 fix: ?project= drill-down 必须落在 scope 内，做交集防止 IDOR
         # （之前直接 Q(project_id=project_id) 覆盖了 scope 过滤）
+        # 再叠加 C-重审 fix: Project 用 id，其它外键用 project_id；
+        # 否则 Project.objects.filter(Q(project_id=...)) 直接 FieldError 500
         if scoped is None:
+            proj_pk_q = Q(id=project_id)
             proj_q = Q(project_id=project_id)
             plan_q = Q(project_id=project_id)
             via_plan_q = Q(test_plan__project_id=project_id)
         else:
+            proj_pk_q = Q(id=project_id, id__in=scoped)
             proj_q = Q(project_id=project_id, project_id__in=scoped)
             plan_q = Q(project_id=project_id, project_id__in=scoped)
             via_plan_q = Q(
@@ -40,7 +46,7 @@ def stats(request):
                 test_plan__project_id__in=scoped,
             )
 
-    total_projects = Project.objects.filter(proj_q).count()
+    total_projects = Project.objects.filter(proj_pk_q).count()
     total_testcases = TestCase.objects.filter(proj_q).count()
     total_testplans = TestPlan.objects.filter(plan_q).count()
 

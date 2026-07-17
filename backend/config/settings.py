@@ -20,13 +20,46 @@ def _env_bool(name, default='False'):
 
 DEBUG = _env_bool('DJANGO_DEBUG')
 
+# C4 fix: 显式部署环境标记。production 模式无论 DEBUG 如何都强制安全基线，
+# 防止 .env 残留 DEBUG=True + 占位 secret 启动裸奔。
+_ENV = (os.environ.get('DJANGO_ENV', 'development') or 'development').strip().lower()
+IS_PRODUCTION = _ENV in ('production', 'prod')
+
+_PLACEHOLDER_SECRETS = (
+    'your-secret-key-here',
+    'replace-me-with-python-secrets-token-urlsafe-50',
+    'replace-with-strong-db-password',
+)
+
+if IS_PRODUCTION:
+    # 生产模式：DEBUG 必须 False；占位符 secret 必须替换；DB 密码强度最低门槛
+    if DEBUG:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            'DJANGO_ENV=production 时 DJANGO_DEBUG 必须为 False。'
+            '禁止用 .env 里的 DEBUG=True 启动生产。'
+        )
+    if SECRET_KEY in _PLACEHOLDER_SECRETS or SECRET_KEY.startswith('django-insecure-'):
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            'DJANGO_SECRET_KEY 仍为占位符。生产模式要求设置真实随机值，'
+            '可用 `python -c "import secrets; print(secrets.token_urlsafe(50))"` 生成。'
+        )
+    db_pw = os.environ.get('DB_PASSWORD', '')
+    if not db_pw or db_pw in _PLACEHOLDER_SECRETS or len(db_pw) < 12:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            'DB_PASSWORD 必须在生产环境配置为 ≥12 位的强密码，'
+            '禁止占位符 / 空值 / 短密码。'
+        )
+
 # 二次保险：如果仍然是占位符或 Django 默认 insecure 串，且 DEBUG=False，
 # 拒绝启动。开发环境仍可以用默认值跑测试。
-if not DEBUG and (SECRET_KEY.startswith('django-insecure-') or SECRET_KEY == 'your-secret-key-here'):
+if not DEBUG and (SECRET_KEY.startswith('django-insecure-') or SECRET_KEY in _PLACEHOLDER_SECRETS):
     from django.core.exceptions import ImproperlyConfigured
     raise ImproperlyConfigured(
         'DJANGO_SECRET_KEY 必须在生产环境配置为强随机值，'
-        '不允许 django-insecure-* / your-secret-key-here 等占位符。'
+        '不允许 django-insecure-* / 占位符。'
     )
 
 # H1 fix: strip + 去空；阻止裸的通配符除非 DEBUG=True 且显式开启

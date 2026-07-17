@@ -46,6 +46,14 @@ class TestRunViewSet(viewsets.ModelViewSet):
         return TestRunListSerializer
 
     def perform_create(self, serializer):
+        # C3 fix: test_plan 必须在用户的 accessible scope 内
+        from rest_framework.exceptions import PermissionDenied
+        from apps.accounts.permissions import accessible_project_ids
+        test_plan = serializer.validated_data.get('test_plan')
+        if test_plan is not None:
+            scoped = accessible_project_ids(self.request.user)
+            if scoped is not None and test_plan.project_id not in scoped:
+                raise PermissionDenied('无权在该测试计划下创建测试执行')
         with transaction.atomic():
             test_run = serializer.save(created_by=self.request.user)
             plan_cases = test_run.test_plan.plan_cases.select_related('test_case').all()

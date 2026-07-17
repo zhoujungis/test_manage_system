@@ -27,11 +27,11 @@
         </el-descriptions>
       </template>
       <template v-else>
-        <el-form :model="form" label-width="80px">
-          <el-form-item label="标题" required>
+        <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
+          <el-form-item label="标题" prop="title">
             <el-input v-model="form.title" />
           </el-form-item>
-          <el-form-item label="描述" required>
+          <el-form-item label="描述" prop="description">
             <el-input v-model="form.description" type="textarea" :rows="4" />
           </el-form-item>
           <el-row :gutter="20">
@@ -75,6 +75,12 @@ const loading = ref(false)
 const defect = ref({})
 const editing = ref(false)
 const form = reactive({ title: '', description: '', severity: 'S2', status: 'open' })
+// C12 fix: 真正的表单校验
+const formRef = ref(null)
+const rules = {
+  title: [{ required: true, message: '请输入缺陷标题', trigger: 'blur' }],
+  description: [{ required: true, message: '请输入缺陷描述', trigger: 'blur' }],
+}
 
 function severityType(s) {
   const map = { S0: 'danger', S1: 'danger', S2: 'warning', S3: 'info', S4: '' }
@@ -103,9 +109,16 @@ onMounted(async () => {
 })
 
 async function handleSave() {
-  await updateDefect(defectId, form)
-  Object.assign(defect.value, form)
-  editing.value = false
-  ElMessage.success('更新成功')
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+  try {
+    await updateDefect(defectId, form)
+    Object.assign(defect.value, form)
+    editing.value = false
+    ElMessage.success('更新成功')
+  } catch {
+    /* 拦截器已 toast */
+  }
 }
 </script>

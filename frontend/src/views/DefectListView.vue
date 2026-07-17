@@ -46,15 +46,23 @@
       <el-table-column prop="created_at" label="创建时间" width="170">
         <template #default="{ row }">{{ row.created_at?.slice(0, 19).replace('T', ' ') }}</template>
       </el-table-column>
+      <el-table-column label="操作" width="160" fixed="right">
+        <template #default="{ row }">
+          <el-button size="small" @click.stop="showDialog(row)">编辑</el-button>
+          <el-button size="small" type="danger" @click.stop="handleDelete(row)">删除</el-button>
+        </template>
+      </el-table-column>
     </el-table>
+    <!-- C13 fix: 空态 -->
+    <el-empty v-if="!loading && defects.length === 0" description="暂无缺陷" :image-size="80" />
     </div>
 
-    <el-dialog :title="editing.id ? '编辑缺陷' : '新建缺陷'" v-model="dialogVisible" width="600px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="标题" required>
+    <el-dialog :title="editing.id ? '编辑缺陷' : '新建缺陷'" v-model="dialogVisible" width="600px" :close-on-click-modal="false">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
+        <el-form-item label="标题" prop="title">
           <el-input v-model="form.title" />
         </el-form-item>
-        <el-form-item label="描述" required>
+        <el-form-item label="描述" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="4" />
         </el-form-item>
         <el-row :gutter="20">
@@ -103,6 +111,12 @@ const dialogVisible = ref(false)
 const editing = reactive({})
 const form = reactive({ title: '', description: '', severity: 'S2', status: 'open' })
 const filters = reactive({ status: '', severity: '' })
+// C12 fix: 真正的表单校验，不只是 HTML required
+const formRef = ref(null)
+const rules = {
+  title: [{ required: true, message: '请输入缺陷标题', trigger: 'blur' }],
+  description: [{ required: true, message: '请输入缺陷描述', trigger: 'blur' }],
+}
 
 function severityType(s) {
   const map = { S0: 'danger', S1: 'danger', S2: 'warning', S3: 'info', S4: '' }
@@ -148,15 +162,42 @@ function showDialog(row) {
 }
 
 async function handleSave() {
-  if (editing.id) {
-    await updateDefect(editing.id, form)
-    ElMessage.success('更新成功')
-  } else {
-    await createDefect({ ...form, project: projectId })
-    ElMessage.success('创建成功')
+  // C12 fix: 走真正的 validate，否则空表单也能提交
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+  try {
+    if (editing.id) {
+      await updateDefect(editing.id, form)
+      ElMessage.success('更新成功')
+    } else {
+      await createDefect({ ...form, project: projectId })
+      ElMessage.success('创建成功')
+    }
+    dialogVisible.value = false
+    fetchData()
+  } catch {
+    /* 拦截器已 toast */
   }
-  dialogVisible.value = false
-  fetchData()
+}
+
+async function handleDelete(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除缺陷「${row.title}」？该操作不可撤销。`,
+      '删除确认',
+      { type: 'warning' },
+    )
+  } catch {
+    return  // 用户取消
+  }
+  try {
+    await deleteDefect(row.id)
+    ElMessage.success('已删除')
+    fetchData()
+  } catch {
+    /* 拦截器已 toast */
+  }
 }
 
 onMounted(fetchData)

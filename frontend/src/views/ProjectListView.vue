@@ -201,9 +201,9 @@
     </template>
 
     <!-- 对话框们 -->
-    <el-dialog :title="editing.id ? '编辑项目' : '新建项目'" v-model="dialogVisible" width="560px">
-      <el-form :model="form" label-width="100px">
-        <el-form-item label="项目名称" required>
+    <el-dialog :title="editing.id ? '编辑项目' : '新建项目'" v-model="dialogVisible" width="560px" :close-on-click-modal="false">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+        <el-form-item label="项目名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入项目名称" />
         </el-form-item>
         <el-form-item label="产品线">
@@ -257,9 +257,9 @@
     </el-dialog>
 
     <!-- 任务对话框 -->
-    <el-dialog :title="taskEditing.id ? '编辑任务' : '新建任务'" v-model="taskDialogVisible" width="520px">
-      <el-form :model="taskForm" label-width="80px">
-        <el-form-item label="任务名称" required>
+    <el-dialog :title="taskEditing.id ? '编辑任务' : '新建任务'" v-model="taskDialogVisible" width="520px" :close-on-click-modal="false">
+      <el-form ref="taskFormRef" :model="taskForm" :rules="taskRules" label-width="80px">
+        <el-form-item label="任务名称" prop="title">
           <el-input v-model="taskForm.title" />
         </el-form-item>
         <el-form-item label="描述">
@@ -320,8 +320,8 @@
         </template>
       </el-tree>
       <el-divider style="margin:12px 0" />
-      <el-form :model="caseForm" label-width="80px">
-        <el-form-item label="关联任务" required>
+      <el-form ref="caseFormRef" :model="caseForm" :rules="caseRules" label-width="80px">
+        <el-form-item label="关联任务" prop="task_id">
           <el-select v-model="caseForm.task_id" placeholder="选择任务" style="width:100%">
             <el-option v-for="t in tasks.filter(t => t.status !== 'done')" :key="t.id"
               :label="`${t.title}${t.round ? ' (' + t.round + ')' : ''}`" :value="t.id" />
@@ -395,6 +395,9 @@ function selectProject(row) {
 const dialogVisible = ref(false)
 const editing = reactive({})
 const form = reactive({ name: '', description: '', status: 'active', product_line: 'camera', planned_start_date: null, planned_end_date: null })
+// C12 fix: 真正的表单校验
+const formRef = ref(null)
+const rules = { name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }] }
 
 function showDialog(row) {
   if (row) {
@@ -408,17 +411,25 @@ function showDialog(row) {
 }
 
 async function handleSave() {
-  if (editing.id) {
-    await updateProject(editing.id, form)
-    ElMessage.success('更新成功')
-  } else {
-    const res = await createProject(form)
-    ElMessage.success('创建成功')
-    selectedProject.value = res
-    activeTab.value = 'info'
+  // C12 fix: 走真正的 validate
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+  try {
+    if (editing.id) {
+      await updateProject(editing.id, form)
+      ElMessage.success('更新成功')
+    } else {
+      const res = await createProject(form)
+      ElMessage.success('创建成功')
+      selectedProject.value = res
+      activeTab.value = 'info'
+    }
+    dialogVisible.value = false
+    fetchProjects()
+  } catch {
+    /* 拦截器已 toast */
   }
-  dialogVisible.value = false
-  fetchProjects()
 }
 
 async function handleDelete(row) {
@@ -496,6 +507,9 @@ const tasks = ref([])
 const taskDialogVisible = ref(false)
 const taskEditing = reactive({})
 const taskForm = reactive({ title: '', description: '', round: '', assigned_to: null, priority: 'P2', status: 'todo', due_date: null })
+// C12 fix
+const taskFormRef = ref(null)
+const taskRules = { title: [{ required: true, message: '请输入任务名称', trigger: 'blur' }] }
 
 async function fetchTasks() {
   if (!selectedProject.value) return
@@ -515,16 +529,24 @@ function showTaskDialog(row) {
 }
 
 async function handleSaveTask() {
-  if (taskEditing.id) {
-    await updateTask(taskEditing.id, taskForm)
-    ElMessage.success('更新成功')
-  } else {
-    await createTask(selectedProject.value.id, taskForm)
-    ElMessage.success('任务创建成功')
+  // C12 fix: 走真正的 validate
+  if (!taskFormRef.value) return
+  const valid = await taskFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  try {
+    if (taskEditing.id) {
+      await updateTask(taskEditing.id, taskForm)
+      ElMessage.success('更新成功')
+    } else {
+      await createTask(selectedProject.value.id, taskForm)
+      ElMessage.success('任务创建成功')
+    }
+    taskDialogVisible.value = false
+    fetchTasks()
+    fetchProjects()
+  } catch {
+    /* 拦截器已 toast */
   }
-  taskDialogVisible.value = false
-  fetchTasks()
-  fetchProjects()
 }
 
 async function handleDeleteTask(row) {
@@ -544,6 +566,9 @@ const assignedTreeKey = ref(0)
 const caseDialogVisible = ref(false)
 const caseEditing = reactive({})
 const caseForm = reactive({ task_id: null, assigned_to: null, status: 'pending', notes: '' })
+// C12 fix
+const caseFormRef = ref(null)
+const caseRules = { task_id: [{ required: true, message: '请选择关联任务', trigger: 'change' }] }
 
 const caseTreeData = ref([])
 const caseTreeRef = ref(null)
@@ -795,21 +820,30 @@ async function onCaseDialogOpen() {
 }
 
 async function handleSaveCase() {
+  // C12 fix: 真正的表单校验 + 选人/选用例校验
   if (caseEditing.id) {
     if (!selectedCaseIds.value.length) { ElMessage.warning('请选择用例'); return }
-    await updateCaseAssignment(caseEditing.id, {
-      test_case: selectedCaseIds.value[0],
-      task: caseForm.task_id,
-      assigned_to: caseForm.assigned_to,
-      status: caseForm.status,
-      notes: caseForm.notes,
-    })
-    ElMessage.success('更新成功')
+    if (!caseFormRef.value) return
+    const valid = await caseFormRef.value.validate().catch(() => false)
+    if (!valid) return
   } else {
     if (!selectedCaseIds.value.length) { ElMessage.warning('请勾选用例'); return }
-    if (!caseForm.task_id) { ElMessage.warning('请选择关联任务'); return }
+    if (!caseFormRef.value) return
+    const valid = await caseFormRef.value.validate().catch(() => false)
+    if (!valid) return
     if (!caseForm.assigned_to) { ElMessage.warning('请选择执行人'); return }
-    try {
+  }
+  try {
+    if (caseEditing.id) {
+      await updateCaseAssignment(caseEditing.id, {
+        test_case: selectedCaseIds.value[0],
+        task: caseForm.task_id,
+        assigned_to: caseForm.assigned_to,
+        status: caseForm.status,
+        notes: caseForm.notes,
+      })
+      ElMessage.success('更新成功')
+    } else {
       const res = await createCaseAssignment(selectedProject.value.id, {
         test_case_ids: selectedCaseIds.value,
         task_id: caseForm.task_id,
@@ -818,13 +852,13 @@ async function handleSaveCase() {
         notes: caseForm.notes,
       })
       ElMessage.success(`分配完成：新增 ${res.created}，更新 ${res.updated}`)
-    } catch {
-      // error shown by interceptor
     }
+    caseDialogVisible.value = false
+    clearAssignmentCache()
+    fetchCaseAssignments()
+  } catch {
+    /* 拦截器已 toast */
   }
-  caseDialogVisible.value = false
-  clearAssignmentCache()
-  fetchCaseAssignments()
 }
 
 async function handleDeleteCase(row) {

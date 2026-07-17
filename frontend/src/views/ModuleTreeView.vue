@@ -18,11 +18,13 @@
         </template>
       </el-table-column>
     </el-table>
+    <!-- C13 fix: 空态 -->
+    <el-empty v-if="!loading && modules.length === 0" description="暂无模块" :image-size="80" />
     </div>
 
-    <el-dialog :title="editing.id ? '编辑模块' : '添加模块'" v-model="dialogVisible" width="500px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="名称" required>
+    <el-dialog :title="editing.id ? '编辑模块' : '添加模块'" v-model="dialogVisible" width="500px" :close-on-click-modal="false">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item label="描述">
@@ -55,6 +57,11 @@ const modules = ref([])
 const dialogVisible = ref(false)
 const editing = reactive({})
 const form = reactive({ name: '', description: '', parent: null })
+// C12 fix: 真正的表单校验
+const formRef = ref(null)
+const rules = {
+  name: [{ required: true, message: '请输入模块名称', trigger: 'blur' }],
+}
 
 async function fetchModules() {
   loading.value = true
@@ -81,19 +88,33 @@ function showDialog(row) {
 }
 
 async function handleSave() {
-  if (editing.id) {
-    await updateModule(editing.id, { name: form.name, description: form.description, parent: form.parent })
-    ElMessage.success('更新成功')
-  } else {
-    await createModule(projectId, { name: form.name, description: form.description, parent: form.parent })
-    ElMessage.success('创建成功')
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+  try {
+    if (editing.id) {
+      await updateModule(editing.id, { name: form.name, description: form.description, parent: form.parent })
+      ElMessage.success('更新成功')
+    } else {
+      await createModule(projectId, { name: form.name, description: form.description, parent: form.parent })
+      ElMessage.success('创建成功')
+    }
+    dialogVisible.value = false
+    fetchModules()
+  } catch {
+    /* 拦截器已 toast */
   }
-  dialogVisible.value = false
-  fetchModules()
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm('确定删除该模块？', '提示', { type: 'warning' })
+  try {
+    // H5 fix: 提示级联影响（删除模块会让该模块下的用例变成未分类）
+    await ElMessageBox.confirm(
+      `确定删除模块「${row.name}」？该模块下的所有测试用例将变成未分类。`,
+      '删除确认',
+      { type: 'warning' },
+    )
+  } catch { return }
   await deleteModule(row.id)
   ElMessage.success('删除成功')
   fetchModules()

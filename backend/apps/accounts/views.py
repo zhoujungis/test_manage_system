@@ -1,7 +1,6 @@
 import secrets
 from django.db import transaction
 from django.utils import timezone
-from datetime import timedelta
 from django.db import models
 from django.contrib.auth.models import User
 from rest_framework import status
@@ -37,7 +36,9 @@ from .throttles import (
 from rest_framework.throttling import AnonRateThrottle
 from .email_utils import send_mail_async
 
-CODE_TTL = timedelta(minutes=5)
+# C9 fix: 验证码 TTL 单一来源改为 VerificationCode.CODE_TTL_SECONDS，
+# 避免 models 与 views 各写一份导致漂移。
+CODE_TTL_SECONDS = VerificationCode.CODE_TTL_SECONDS
 
 # 通用错误信息（不能用 page-level error 字符串，否则泄漏 email 是否已注册）
 _GENERIC_VERIFY_FAIL = '验证码错误或已过期，或该邮箱未注册'
@@ -80,7 +81,7 @@ def _verify_code(email, code, purpose):
             return None
         if vc.is_locked:
             return None
-        if (timezone.now() - vc.created_at) > CODE_TTL:
+        if (timezone.now() - vc.created_at).total_seconds() > CODE_TTL_SECONDS:
             return None
         # 用 compare_digest 减轻时序侧信道
         if not secrets.compare_digest(target_hash, vc.code_hash):
@@ -265,37 +266,53 @@ def admin_user_permissions(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def admin_update_user_permissions(request, user_id):
-    """管理员：更新指定非管理员用户的角色与权限。"""
+    """管理员：更新指定非管理员用户的角色与权限。
+
+    C7 fix: 用 select_for_update 包住「读 profile.role → 写回」全过程。
+    否则两个管理员并发改同一个非管理员：A 检查时是 tester，B 中途把它升为 admin
+    并 commit，A 的写仍会落到 admin 行上 → 越权。
+    """
     from .serializers import AdminUserPermissionSerializer
 
-    target = User.objects.select_related('profile').filter(pk=user_id).first()
+    target = User.objects.filter(pk=user_id).first()
     if not target:
         return Response({'error': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
-
-    profile = UserProfile.objects.get_or_create(user=target, defaults={'role': 'tester'})[0]
-    if profile.role == 'admin':
-        return Response({'error': '不能修改管理员账号权限'}, status=status.HTTP_400_BAD_REQUEST)
 
     serializer = AdminUserPermissionSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    data = serializer.validated_data
-    old_role = profile.role
-    if data.get('apply_role_defaults') and 'role' in data:
-        profile.role = data['role']
-        apply_role_default_permissions(profile, profile.role)
-    elif 'role' in data and data['role'] != old_role:
-        profile.role = data['role']
-        apply_role_default_permissions(profile, profile.role)
-    elif 'role' in data:
-        profile.role = data['role']
+    with transaction.atomic():
+        # 行锁 profile（user_id 上有 OneToOneField 的 unique 索引）
+        profile = (UserProfile.objects
+                   .select_for_update()
+                   .filter(user=target)
+                   .first())
+        if profile is None:
+            # 不在事务里 get_or_create 会绕过锁；这里显式 create 后再加锁
+            profile = UserProfile.objects.create(user=target, role='tester')
+            profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
 
-    for field in PERMISSION_FIELDS:
-        if field in data:
-            setattr(profile, field, data[field])
+        if profile.role == 'admin':
+            return Response({'error': '不能修改管理员账号权限'}, status=status.HTTP_400_BAD_REQUEST)
 
-    profile.save()
+        data = serializer.validated_data
+        old_role = profile.role
+        if data.get('apply_role_defaults') and 'role' in data:
+            profile.role = data['role']
+            apply_role_default_permissions(profile, profile.role)
+        elif 'role' in data and data['role'] != old_role:
+            profile.role = data['role']
+            apply_role_default_permissions(profile, profile.role)
+        elif 'role' in data:
+            profile.role = data['role']
+
+        for field in PERMISSION_FIELDS:
+            if field in data:
+                setattr(profile, field, data[field])
+
+        profile.save()
+
     return Response(UserSerializer(target).data)
 
 

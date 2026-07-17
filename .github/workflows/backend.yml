@@ -69,4 +69,5 @@ jobs:
         working-directory: backend
         run: |
           python manage.py migrate
-          python manage.py test --noinput
+          # C8 fix: 显式列 test labels，避免依赖 __init__.py + discovery
+          python manage.py test apps.accounts apps.projects apps.testcases apps.testplans apps.testruns apps.defects --noinput -v 2

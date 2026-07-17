@@ -36,14 +36,16 @@
         </template>
       </el-table-column>
     </el-table>
+    <!-- C13 fix: 空态 -->
+    <el-empty v-if="!loading && runs.length === 0" description="暂无测试执行" :image-size="80" />
     </div>
 
-    <el-dialog title="新建测试执行" v-model="dialogVisible" width="500px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="执行名称" required>
+    <el-dialog title="新建测试执行" v-model="dialogVisible" width="500px" :close-on-click-modal="false">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
+        <el-form-item label="执行名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="所属计划" required>
+        <el-form-item label="所属计划" prop="test_plan">
           <el-select v-model="form.test_plan" style="width: 100%">
             <el-option v-for="p in plans" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
@@ -72,6 +74,12 @@ const runs = ref([])
 const plans = ref([])
 const dialogVisible = ref(false)
 const form = reactive({ name: '', test_plan: '' })
+// C12 fix: 真正的表单校验
+const formRef = ref(null)
+const rules = {
+  name: [{ required: true, message: '请输入执行名称', trigger: 'blur' }],
+  test_plan: [{ required: true, message: '请选择所属计划', trigger: 'change' }],
+}
 
 function statusLabel(s) {
   const map = { pending: '待执行', running: '执行中', completed: '已完成' }
@@ -103,10 +111,17 @@ async function showCreateDialog() {
 }
 
 async function handleCreate() {
-  await createTestRun({ ...form })
-  ElMessage.success('创建成功，已自动关联计划中的用例')
-  dialogVisible.value = false
-  fetchData()
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+  try {
+    await createTestRun({ ...form })
+    ElMessage.success('创建成功，已自动关联计划中的用例')
+    dialogVisible.value = false
+    fetchData()
+  } catch {
+    /* 拦截器已 toast */
+  }
 }
 
 async function handleStart(row) {

@@ -193,18 +193,70 @@ class ModuleViewSet(viewsets.ModelViewSet):
 
 
 class ProjectMemberViewSet(viewsets.ModelViewSet):
-    queryset = ProjectMember.objects.select_related('user', 'project').all()
+    # C6 fix: 根路径 /project-members/ 不再有「任意 dev 改任意项目成员」的口子。
+    # queryset 限定到用户能访问的项目；perform_create/perform_update 也校验。
     serializer_class = ProjectMemberSerializer
     permission_classes = [IsAuthenticated, IsNotTester]
 
+    def get_queryset(self):
+        qs = ProjectMember.objects.select_related('user', 'project').all()
+        scoped = accessible_project_ids(self.request.user)
+        if scoped is not None:
+            qs = qs.filter(project_id__in=scoped)
+        return qs
+
+    def perform_create(self, serializer):
+        project = serializer.validated_data.get('project')
+        self._check_project_scope(project)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        project = serializer.instance.project
+        self._check_project_scope(project)
+        serializer.save()
+
+    def _check_project_scope(self, project):
+        if project is None:
+            return  # 兜底交给 serializer 校验
+        scoped = accessible_project_ids(self.request.user)
+        if scoped is None:
+            return  # admin / 有项目管理权限
+        if project.id not in scoped:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('无权操作该项目的成员')
+
 
 class ProjectTaskViewSet(viewsets.ModelViewSet):
-    queryset = ProjectTask.objects.select_related('assigned_to', 'created_by', 'project').all()
+    # C6 fix: 同 ProjectMember。
     serializer_class = ProjectTaskSerializer
     permission_classes = [IsAuthenticated, IsNotTester]
 
+    def get_queryset(self):
+        qs = ProjectTask.objects.select_related('assigned_to', 'created_by', 'project').all()
+        scoped = accessible_project_ids(self.request.user)
+        if scoped is not None:
+            qs = qs.filter(project_id__in=scoped)
+        return qs
+
     def perform_create(self, serializer):
+        project = serializer.validated_data.get('project')
+        self._check_project_scope(project)
         serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        project = serializer.instance.project
+        self._check_project_scope(project)
+        serializer.save()
+
+    def _check_project_scope(self, project):
+        if project is None:
+            return
+        scoped = accessible_project_ids(self.request.user)
+        if scoped is None:
+            return
+        if project.id not in scoped:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('无权操作该项目的任务')
 
 
 class TestCaseAssignmentViewSet(viewsets.ModelViewSet):

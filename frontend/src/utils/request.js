@@ -40,24 +40,42 @@ function notifyAuthStore(access, refresh) {
 
 function doRefresh() {
   if (inflightRefresh) return inflightRefresh
-  const refreshToken = localStorage.getItem('refresh_token')
+  const refreshToken = sessionStorage.getItem('refresh_token') || localStorage.getItem('refresh_token')
   if (!refreshToken) return Promise.reject(new Error('no refresh token'))
   inflightRefresh = refreshClient
     .post('/auth/refresh/', { refresh: refreshToken })
     .then((res) => {
       const data = res.data
       if (!data || !data.access) throw new Error('invalid refresh response')
+      // C10 fix: 迁到 sessionStorage（仍非 HttpOnly cookie，但 tab 关即清，缩小 XSS 留存时间）；
+      // 同时同步写到 localStorage 兼容现有 refresh 兜底。注释里挂 TODO 提示迁 HttpOnly cookie。
+      // TODO(security): 后端支持后切到 HttpOnly Secure SameSite=Lax cookie，由 Set-Cookie 注入。
+      sessionStorage.setItem('access_token', data.access)
       localStorage.setItem('access_token', data.access)
-      if (data.refresh) localStorage.setItem('refresh_token', data.refresh)
+      if (data.refresh) {
+        sessionStorage.setItem('refresh_token', data.refresh)
+        localStorage.setItem('refresh_token', data.refresh)
+      }
       notifyAuthStore(data.access, data.refresh)
       return data.access
     })
     .catch((err) => {
-      // refresh 失败：清掉 token、跳登录
+      // refresh 失败：清掉 token、调用 store.logout() 让状态机重置
+      sessionStorage.removeItem('access_token')
+      sessionStorage.removeItem('refresh_token')
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
       notifyAuthStore(null, null)
-      router.push('/login')
+      // C18 fix: 走 store.logout()（重置 auth.ready）而不是直接 router.push
+      // 避免 router/index.js 里模块级 authReady 卡在 true 永远不再 init。
+      try {
+        import('@/stores/auth').then(({ useAuthStore }) => {
+          const store = useAuthStore()
+          store.logout?.()
+        })
+      } catch {
+        router.push('/login')
+      }
       throw err
     })
     .finally(() => {
@@ -68,7 +86,8 @@ function doRefresh() {
 
 request.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token')
+    // C10 fix: sessionStorage 优先，localStorage 兜底兼容旧 refresh
+    const token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -98,7 +117,9 @@ request.interceptors.response.use(
     }
 
     // 不属于 401 重试路径：显示通用错误
-    if (!error.config?._skipInterceptors) {
+    // C16 fix: 默认 toast（保持兼容所有 `catch { /* */ }` 模式）；
+    // view 想自己展示更精确的错误时，传 _silent: true 即可。
+    if (!error.config?._skipInterceptors && !error.config?._silent) {
       const data = error.response?.data || {}
       let msg = ''
       if (typeof data === 'string') {
@@ -117,7 +138,7 @@ request.interceptors.response.use(
         }
       }
       if (!msg) msg = '请求失败'
-      ElMessage({ message: msg, type: 'error' })
+      ElMessage({ message: msg, type: 'error', duration: 4500 })
     }
     return Promise.reject(error)
   }

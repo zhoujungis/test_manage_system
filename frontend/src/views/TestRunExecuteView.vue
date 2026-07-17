@@ -33,6 +33,8 @@
         </template>
       </el-table-column>
     </el-table>
+    <!-- C13 fix: 空态 -->
+    <el-empty v-if="loaded && !(run.results || []).length" description="该执行暂无结果" :image-size="80" />
   </div>
 </template>
 
@@ -45,6 +47,7 @@ import { ElMessage } from 'element-plus'
 const route = useRoute()
 const runId = route.params.rid
 const run = ref({})
+const loaded = ref(false)   // C13: 区分「还在加载」和「真的空」
 
 function statusLabel(s) {
   const map = { pending: '待执行', running: '执行中', completed: '已完成' }
@@ -65,6 +68,7 @@ function resultType(s) {
 
 async function fetchRun() {
   run.value = await getTestRun(runId)
+  loaded.value = true
 }
 
 async function handleStart() {

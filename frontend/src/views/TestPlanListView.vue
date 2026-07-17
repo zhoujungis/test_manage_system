@@ -28,11 +28,13 @@
         </template>
       </el-table-column>
     </el-table>
+    <!-- C13 fix: 空态 -->
+    <el-empty v-if="!loading && plans.length === 0" description="暂无测试计划" :image-size="80" />
     </div>
 
-    <el-dialog :title="editing.id ? '编辑计划' : '新建计划'" v-model="dialogVisible" width="500px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="名称" required>
+    <el-dialog :title="editing.id ? '编辑计划' : '新建计划'" v-model="dialogVisible" width="500px" :close-on-click-modal="false">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item label="描述">
@@ -73,6 +75,11 @@ const plans = ref([])
 const dialogVisible = ref(false)
 const editing = reactive({})
 const form = reactive({ name: '', description: '', status: 'draft', start_date: null, end_date: null })
+// C12 fix: 真正的表单校验
+const formRef = ref(null)
+const rules = {
+  name: [{ required: true, message: '请输入计划名称', trigger: 'blur' }],
+}
 
 function statusLabel(s) {
   const map = { draft: '草稿', active: '执行中', completed: '已完成' }
@@ -113,15 +120,22 @@ function showDialog(row) {
 }
 
 async function handleSave() {
-  if (editing.id) {
-    await updateTestPlan(editing.id, form)
-    ElMessage.success('更新成功')
-  } else {
-    await createTestPlan({ ...form, project: projectId })
-    ElMessage.success('创建成功')
+  if (!formRef.value) return
+  const valid = await formRef.value.validate().catch(() => false)
+  if (!valid) return
+  try {
+    if (editing.id) {
+      await updateTestPlan(editing.id, form)
+      ElMessage.success('更新成功')
+    } else {
+      await createTestPlan({ ...form, project: projectId })
+      ElMessage.success('创建成功')
+    }
+    dialogVisible.value = false
+    fetchData()
+  } catch {
+    /* 拦截器已 toast */
   }
-  dialogVisible.value = false
-  fetchData()
 }
 
 async function handleDelete(row) {

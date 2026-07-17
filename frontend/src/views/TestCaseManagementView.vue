@@ -101,9 +101,9 @@
     </div>
     </div>
 
-    <el-dialog v-model="moduleDialogVisible" title="新增功能模块" width="400px" destroy-on-close>
-      <el-form label-width="80px">
-        <el-form-item label="模块名称" required>
+    <el-dialog v-model="moduleDialogVisible" title="新增功能模块" width="400px" destroy-on-close :close-on-click-modal="false">
+      <el-form ref="moduleFormRef" :model="moduleForm" :rules="moduleRules" label-width="80px">
+        <el-form-item label="模块名称" prop="name">
           <el-input v-model="moduleForm.name" placeholder="请输入模块名称" maxlength="50" />
         </el-form-item>
       </el-form>
@@ -116,9 +116,9 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getTestCases, getTestCase, deleteTestCase } from '@/api/testcases'
+import { getTestCaseTree, getTestCase, deleteTestCase } from '@/api/testcases'
 import { getLibraryModules, createLibraryModule, deleteModule } from '@/api/projects'
 import { useUserIdentity } from '@/composables/useUserIdentity'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -147,7 +147,13 @@ const full = ref(null)
 const detailLoading = ref(false)
 const moduleDialogVisible = ref(false)
 const addingModule = ref(false)
+// C12 fix: 表单校验
+const moduleFormRef = ref(null)
+const moduleRules = { name: [{ required: true, message: '请输入模块名称', trigger: 'blur' }] }
 const moduleForm = ref({ name: '' })
+
+// 用 AbortController 避免快速切换产品线 / 优先级时旧请求覆盖新数据
+let loadToken = 0
 
 watch(() => route.params.product_line, (v) => {
   if (v) { productLine.value = v; loadTree() }
@@ -161,36 +167,47 @@ function sType(s) { const m={draft:'info',active:'success',deprecated:'warning'}
 function pType(p) { const m={P0:'danger',P1:'danger',P2:'warning',P3:'info',P4:''}; return m[p]||'' }
 
 async function loadTree() {
-  const params = { product_line: productLine.value, all: 1 }
+  const myToken = ++loadToken
+  const params = { product_line: productLine.value }
   if (route.query.priority) params.priority = route.query.priority
-  const [casesRes, modules] = await Promise.all([
-    getTestCases(params),
-    getLibraryModules(productLine.value).catch(() => []),
-  ])
-  const cases = casesRes.results || casesRes
 
-  const mods = {}
-  cases.forEach(tc => {
-    const mod = tc.module_name || '未分类'
-    if (!mods[mod]) mods[mod] = []
-    mods[mod].push({ id:`tc-${tc.id}`, label:tc.title, type:'testcase', priority:tc.priority, _raw:tc })
-  })
+  try {
+    const [casesRes, modules] = await Promise.all([
+      getTestCaseTree(params).catch(() => ({ results: [] })),
+      getLibraryModules(productLine.value).catch(() => []),
+    ])
+    // 切换后再到达的旧请求直接丢弃
+    if (myToken !== loadToken) return
+    const cases = casesRes.results || []
 
-  // 确保所有模块都出现，即使没有用例
-  modules.forEach(m => {
-    if (!mods[m.name]) mods[m.name] = []
-  })
+    const mods = {}
+    cases.forEach(tc => {
+      const mod = tc.module_name || '未分类'
+      if (!mods[mod]) mods[mod] = []
+      mods[mod].push({ id:`tc-${tc.id}`, label:tc.title, type:'testcase', priority:tc.priority, _raw:tc })
+    })
 
-  treeData.value = Object.entries(mods).map(([mod, children]) => {
-    const modInfo = modules.find(m => m.name === mod)
-    return {
-      id: `mod-${mod}`,
-      label: mod,
-      type: 'module',
-      _moduleId: modInfo?.id || null,
-      children,
-    }
-  })
+    // 确保空模块也出现在树里
+    modules.forEach(m => {
+      if (!mods[m.name]) mods[m.name] = []
+    })
+
+    treeData.value = Object.entries(mods).map(([mod, children]) => {
+      const modInfo = modules.find(m => m.name === mod)
+      return {
+        id: `mod-${mod}`,
+        label: mod,
+        type: 'module',
+        _moduleId: modInfo?.id || null,
+        children,
+      }
+    })
+  } catch (e) {
+    if (myToken !== loadToken) return
+    // eslint-disable-next-line no-console
+    console.error('loadTree failed', e)
+    treeData.value = []
+  }
 }
 
 async function onNodeClick(d) {
@@ -221,14 +238,17 @@ function openAddModule() {
 }
 
 async function submitAddModule() {
-  if (!moduleForm.value.name.trim()) { ElMessage.warning('请输入模块名称'); return }
+  // C12 fix: 走真正的 validate
+  if (!moduleFormRef.value) return
+  const valid = await moduleFormRef.value.validate().catch(() => false)
+  if (!valid) return
   addingModule.value = true
   try {
     await createLibraryModule({ name: moduleForm.value.name.trim(), product_line: productLine.value })
     ElMessage.success('模块已创建')
     moduleDialogVisible.value = false
     loadTree()
-  } catch { /* */ }
+  } catch { /* 拦截器已 toast */ }
   finally { addingModule.value = false }
 }
 
@@ -248,6 +268,15 @@ async function confirmDelModule(data) {
 }
 
 onMounted(loadTree)
+
+// C17 fix: 卸载时把 token 标到 sentinel，挡住任何还在飞的旧请求；
+// 并把可能在 onNodeClick 半路的 fetch 取消（虽然现在 token 已经够用，这里再加一层防御）。
+onBeforeUnmount(() => {
+  loadToken = -1   // 任何已 ++ 的 myToken 都不再等于 loadToken，写入被丢
+  // 不需要真正 abort —— token guard 已经阻止 treeData 写入；
+  // 这里只是把引用清掉，让 Vue warn 更容易定位。
+  treeRef.value = null
+})
 </script>
 
 <style scoped>

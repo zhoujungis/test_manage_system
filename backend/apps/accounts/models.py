@@ -91,6 +91,8 @@ class VerificationCode(models.Model):
     ]
     MAX_ATTEMPTS = 5
     CODE_LENGTH = 6
+    # C9 fix: 单一来源。views.py 不再硬编码 timedelta(minutes=5)。
+    CODE_TTL_SECONDS = 5 * 60
 
     email = models.EmailField(db_index=True)
     purpose = models.CharField(max_length=16, choices=PURPOSE_CHOICES)
@@ -118,8 +120,7 @@ class VerificationCode(models.Model):
         from django.utils import timezone
         if self.consumed_at is not None or self.is_locked:
             return False
-        # 默认 5 分钟 TTL 与 views.py 中的 CODE_TTL 保持一致
-        return (timezone.now() - self.created_at).total_seconds() < 5 * 60
+        return (timezone.now() - self.created_at).total_seconds() < self.CODE_TTL_SECONDS
 
     @classmethod
     def issue(cls, email: str, purpose: str):

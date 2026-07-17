@@ -163,6 +163,7 @@
                 <span class="exec-section__count">{{ attachments.length }}</span>
               </h3>
               <el-upload
+                ref="uploadRefEl"
                 :show-file-list="false"
                 :auto-upload="false"
                 :disabled="uploading"
@@ -256,7 +257,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   getProject,
@@ -313,8 +314,11 @@ const pendingDetail = ref(0)
 const taskInfo = ref('')
 const savingNotes = ref(false)
 const uploading = ref(false)
+const uploadRefEl = ref(null)   // C11 fix: 拿到 upload ref 才能 clearFiles()
 
 const statCounts = ref({ passed: 0, failed: 0, pending: 0 })
+// C13 fix: 区分「还在加载」和「真的空」；右侧详情面板空态
+const rightPanelLoaded = ref(false)
 
 const statusLabels = {
   pending: '待测试',
@@ -482,8 +486,10 @@ async function saveStatus(field) {
   const data = field === 'status' ? { status: execStatus.value } : { approval_status: approvalStatus.value }
   try {
     await updateCaseAssignment(assignmentId.value, data)
+    // C15 fix: 之前还会调 loadData() → 全量重渲染 + treeKey++ → 丢展开/滚动/高亮。
+    // 现在 syncTreeNode() 已经更新节点 _status；再原地重算 stats 即可。
     syncTreeNode()
-    if (field === 'status') loadData()
+    recomputeStatCounts()
     ElMessage.success('测试结果已保存')
   } catch {
     /* */
@@ -491,13 +497,30 @@ async function saveStatus(field) {
 }
 
 function syncTreeNode() {
+  // 同步当前节点的 status / approval_status（两个字段独立保存）
   for (const mod of caseTree.value) {
     for (const child of mod.children || []) {
       if (child._assignmentId === assignmentId.value) {
         child._status = statusLabels[execStatus.value]
         child._rawStatus = execStatus.value
+        child._rawApproval = approvalStatus.value
       }
     }
+  }
+}
+
+function recomputeStatCounts() {
+  // 从内存中的 caseTree 重算统计，不重新拉接口
+  const counts = { passed: 0, failed: 0, pending: 0, blocked: 0, skip: 0, not_tested: 0, not_applicable: 0 }
+  for (const mod of caseTree.value) {
+    for (const child of mod.children || []) {
+      if (child._rawStatus in counts) counts[child._rawStatus] += 1
+    }
+  }
+  statCounts.value = {
+    passed: counts.passed,
+    failed: counts.failed,
+    pending: counts.pending + counts.not_tested + counts.not_applicable + counts.blocked + counts.skip,
   }
 }
 
@@ -512,18 +535,34 @@ async function saveNotes() {
   }
 }
 
-async function onFileSelect(uploadFile) {
-  const raw = uploadFile?.raw
-  if (!raw || !assignmentId.value) return
+async function onFileSelect(uploadFile, uploadFiles) {
+  // C11 fix: <el-upload multiple> 会传 file 数组；原实现只读 uploadFile?.raw → 选 3 个只上传 1 个。
+  // 同时清空 upload ref 的 fileList，否则连选同一文件不会触发 change。
+  const uploadRef = uploadRefEl.value
+  const list = Array.isArray(uploadFiles) && uploadFiles.length ? uploadFiles : [uploadFile]
+  if (!assignmentId.value || !list.length) return
   uploading.value = true
+  let success = 0
+  let failed = 0
   try {
-    const att = await uploadAssignmentAttachment(assignmentId.value, raw)
-    attachments.value = [att, ...attachments.value]
-    ElMessage.success('上传成功')
-  } catch {
-    /* */
+    for (const f of list) {
+      const raw = f?.raw
+      if (!raw) continue
+      try {
+        const att = await uploadAssignmentAttachment(assignmentId.value, raw)
+        attachments.value = [att, ...attachments.value]
+        success += 1
+      } catch {
+        failed += 1
+      }
+    }
+    if (success && !failed) ElMessage.success(`已上传 ${success} 个附件`)
+    else if (success && failed) ElMessage.warning(`成功 ${success} 个，失败 ${failed} 个`)
+    else if (failed) ElMessage.error(`上传失败 ${failed} 个`)
   } finally {
     uploading.value = false
+    // C36 fix: 清空 fileList 让用户能再次选同一文件
+    if (uploadRef?.clearFiles) uploadRef.clearFiles()
   }
 }
 
@@ -557,6 +596,10 @@ onMounted(async () => {
     /* */
   }
   loadData()
+})
+// C17 fix: 卸载时让所有 in-flight 请求被 token guard 丢掉
+onBeforeUnmount(() => {
+  pendingDetail.value = -1
 })
 </script>
 

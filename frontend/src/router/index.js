@@ -95,9 +95,14 @@ const routes = [
   },
 ]
 
-const r = createRouter({ history: createWebHistory(), routes })
-
-let authReady = false
+const r = createRouter({
+  history: createWebHistory(),
+  routes,
+  // M29 fix: 路由切换时保留滚动位置（列表页 → 详情 → 返回）
+  scrollBehavior(to, from, savedPosition) {
+    return savedPosition || { top: 0 }
+  },
+})
 
 /**
  * meta.permission 字符串 -> 是否满足
@@ -125,6 +130,9 @@ function hasWritePermission(user, key) {
   return false
 }
 
+// C18 fix: 用 store.ready 取代模块级 authReady 变量。
+// 之前模块级变量在 logout 后永远是 true，导致再登录后路由不再重新 init。
+// store.logout() 会把 ready 重置为 false。
 r.beforeEach(async (to, from) => {
   const meta = to.meta || {}
 
@@ -132,15 +140,16 @@ r.beforeEach(async (to, from) => {
   if (meta.noAuth) return true
 
   // 2. 缺 token → 跳登录 + 携带 redirect
-  if (!localStorage.getItem('access_token')) {
+  // C10 fix: sessionStorage 优先 + localStorage 兜底
+  const hasToken = sessionStorage.getItem('access_token') || localStorage.getItem('access_token')
+  if (!hasToken) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
 
   // 3. 拉取 user（首次访问 / 过期丢失）
   const auth = useAuthStore()
-  if (!authReady) {
+  if (!auth.ready) {
     await auth.init()
-    authReady = true
   } else if (auth.token && !auth.user) {
     try {
       await auth.fetchUser()

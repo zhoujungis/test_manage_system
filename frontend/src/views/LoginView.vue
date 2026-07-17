@@ -274,7 +274,7 @@ async function sendRegisterCode() {
   }
   sendingRegCode.value = true
   try {
-    await request.post('/auth/send-code/', { email: registerForm.email })
+    await request.post('/auth/send-code/', { email: registerForm.email }, { _silent: true })
     ElMessage.success('验证码已发送，请查收邮件')
     startCooldown(regCodeCooldown)
   } catch (e) {
@@ -291,7 +291,7 @@ async function sendResetCode() {
   }
   sendingResetCode.value = true
   try {
-    await request.post('/auth/send-reset-code/', { email: forgotForm.email })
+    await request.post('/auth/send-reset-code/', { email: forgotForm.email }, { _silent: true })
     ElMessage.success('若该邮箱已注册，验证码将发送至您的邮箱')
     startCooldown(resetCodeCooldown)
   } catch (e) {
@@ -327,7 +327,7 @@ async function handleRegister() {
       code: registerForm.code,
       password: registerForm.password,
       role: 'tester',
-    })
+    }, { _silent: true })
     ElMessage.success('注册成功，请登录')
     loginForm.email = registerForm.email
     activeTab.value = 'login'
@@ -348,7 +348,7 @@ async function handleResetPassword() {
       email: forgotForm.email,
       code: forgotForm.code,
       password: forgotForm.password,
-    })
+    }, { _silent: true })
     ElMessage.success('密码已重置，请使用新密码登录')
     loginForm.email = forgotForm.email
     loginForm.password = ''
@@ -369,7 +369,7 @@ async function handleChangePassword() {
       email: changeForm.email,
       old_password: changeForm.oldPassword,
       new_password: changeForm.password,
-    })
+    }, { _silent: true })
     ElMessage.success('密码修改成功，请使用新密码登录')
     loginForm.email = changeForm.email
     loginForm.password = ''

@@ -36,4 +36,20 @@ class DefectViewSet(viewsets.ModelViewSet):
         return DefectListSerializer
 
     def perform_create(self, serializer):
+        # C3 fix: defect.project 必须在用户的 accessible scope 内
+        from rest_framework.exceptions import PermissionDenied
+        project = serializer.validated_data.get('project')
+        if project is not None:
+            scoped = accessible_project_ids(self.request.user)
+            if scoped is not None and project.id not in scoped:
+                raise PermissionDenied('无权在该项目下创建缺陷')
         serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import PermissionDenied
+        project = serializer.validated_data.get('project', serializer.instance.project)
+        if project is not None:
+            scoped = accessible_project_ids(self.request.user)
+            if scoped is not None and project.id not in scoped:
+                raise PermissionDenied('无权把缺陷移到此项目')
+        serializer.save()

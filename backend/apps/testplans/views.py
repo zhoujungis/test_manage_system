@@ -34,7 +34,25 @@ class TestPlanViewSet(viewsets.ModelViewSet):
         return TestPlanListSerializer
 
     def perform_create(self, serializer):
+        # C3 fix: 校验 plan.project 在用户的 accessible scope 内
+        # 否则任何登录用户都可 POST {project: <任意项目>} 创建跨项目计划
+        from rest_framework.exceptions import PermissionDenied
+        project = serializer.validated_data.get('project')
+        if project is not None:
+            scoped = accessible_project_ids(self.request.user)
+            if scoped is not None and project.id not in scoped:
+                raise PermissionDenied('无权在该项目下创建测试计划')
         serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        # 同样校验 update 不允许把 plan 移到越权的 project
+        from rest_framework.exceptions import PermissionDenied
+        project = serializer.validated_data.get('project', serializer.instance.project)
+        if project is not None:
+            scoped = accessible_project_ids(self.request.user)
+            if scoped is not None and project.id not in scoped:
+                raise PermissionDenied('无权把该测试计划移到此项目')
+        serializer.save()
 
     @action(detail=True, methods=['post'])
     def add_cases(self, request, pk=None):
