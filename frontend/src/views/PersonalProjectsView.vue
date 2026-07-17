@@ -103,6 +103,5 @@ function rowClass({ row }) {
 onMounted(fetchMyProjects)
 </script>
 
-<style scoped>
-:deep(.selected-row) { background-color: #ecf5ff !important; }
-</style>
+<!-- M36 fix: .selected-row 全局唯一来源已在 style.css 定义，
+     这里不用再 :deep() 重复。Element Plus 的 row-class-name 会自动注入到 tr。-->

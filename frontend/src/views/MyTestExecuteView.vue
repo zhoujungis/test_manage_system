@@ -49,7 +49,7 @@
               <span class="exec-tree-node__label">{{ data.label }}</span>
               <el-tag v-if="data._taskTitle" size="small" effect="plain" type="">{{ data._taskTitle }}{{ data._taskRound ? ' · ' + data._taskRound : '' }}</el-tag>
               <el-tag v-if="data._status" :type="statusTagType(data._rawStatus)" size="small" effect="light">
-                {{ data._status }}
+                {{ statusLabel(data._rawStatus) }}
               </el-tag>
             </span>
           </template>
@@ -65,7 +65,7 @@
               <div class="exec-case-meta">
                 <el-tag :type="priorityType(fullCase.priority)" size="small">{{ fullCase.priority }}</el-tag>
                 <span>{{ fullCase.module_name || '未分类' }}</span>
-                <span>{{ typeLabel(fullCase.type) }}</span>
+                <span>{{ typeLabel(fullCase.case_type) }}</span>
                 <template v-if="taskInfo">
                   <span style="color:#909399">|</span>
                   <el-tag size="small" effect="plain" style="color:#409eff">{{ taskInfo }}</el-tag>
@@ -209,7 +209,7 @@
       </main>
     </div>
 
-    <el-dialog title="筛选条件" v-model="filterDialogVisible" width="480px" append-to-body>
+    <el-dialog title="筛选条件" v-model="filterDialogVisible" width="480px" append-to-body :close-on-click-modal="false">
       <el-form label-width="80px">
         <el-form-item label="任务">
           <el-select v-model="filterTask" style="width:100%" clearable placeholder="全部任务">
@@ -320,12 +320,19 @@ const statCounts = ref({ passed: 0, failed: 0, pending: 0 })
 // C13 fix: 区分「还在加载」和「真的空」；右侧详情面板空态
 const rightPanelLoaded = ref(false)
 
+// M21 fix: 树标签统一用中文，与右侧详情面板一致
 const statusLabels = {
   pending: '待测试',
-  passed: 'Pass',
-  failed: 'Fail',
-  not_applicable: 'N/A',
-  not_tested: 'N/T',
+  passed: '通过',
+  failed: '失败',
+  not_applicable: '不适用',
+  not_tested: '未测试',
+  blocked: '阻塞',
+  skip: '跳过',
+}
+// M21 fix: 之前未定义函数，模板引用了 statusLabel() —— 这里补一个同名的工具函数
+function statusLabel(s) {
+  return statusLabels[s] || s
 }
 const approvalLabels = { pending: '未审核', approved: '审核通过', rejected: '审核不通过' }
 

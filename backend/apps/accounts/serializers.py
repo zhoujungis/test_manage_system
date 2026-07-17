@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, password_validation
 from django.db import IntegrityError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from apps.common.constants import GLAZERO_EMAIL_SUFFIX, MIN_PASSWORD_LENGTH
 from .models import UserProfile, apply_role_default_permissions
 
 
@@ -214,7 +215,7 @@ class ResetPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=6)
 
     def validate_email(self, value):
-        if not value.endswith('@glazero.com'):
+        if not value.endswith(GLAZERO_EMAIL_SUFFIX):
             raise serializers.ValidationError('仅允许 @glazero.com 邮箱')
         return value
 
@@ -244,7 +245,7 @@ class AdminCreateUserSerializer(serializers.ModelSerializer):
         fields = ['username', 'password', 'email', 'role']
 
     def validate_email(self, value):
-        if not value.endswith('@glazero.com'):
+        if not value.endswith(GLAZERO_EMAIL_SUFFIX):
             raise serializers.ValidationError('仅允许 @glazero.com 邮箱')
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError('该邮箱已被注册')
@@ -293,7 +294,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['username', 'password', 'email']
 
     def validate_email(self, value):
-        if not value.endswith('@glazero.com'):
+        if not value.endswith(GLAZERO_EMAIL_SUFFIX):
             raise serializers.ValidationError('仅允许 @glazero.com 邮箱注册')
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError('该邮箱已被注册')

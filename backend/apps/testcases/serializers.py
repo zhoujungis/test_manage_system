@@ -26,7 +26,7 @@ class TestCaseListSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestCase
         fields = ['id', 'title', 'description', 'project', 'project_name', 'module', 'module_name',
-                  'priority', 'type', 'status', 'product_line', 'created_by', 'created_by_name',
+                  'priority', 'case_type', 'status', 'product_line', 'created_by', 'created_by_name',
                   'updated_by', 'updated_by_name', 'created_at', 'updated_at']
 
 
@@ -40,16 +40,19 @@ class TestCaseDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestCase
         fields = ['id', 'project', 'project_name', 'module', 'module_name', 'title', 'description',
-                  'priority', 'type', 'status', 'product_line', 'preconditions', 'steps',
+                  'priority', 'case_type', 'status', 'product_line', 'preconditions', 'steps',
                   'created_by', 'created_by_name', 'updated_by', 'updated_by_name',
                   'created_at', 'updated_at']
         read_only_fields = ['created_by', 'created_at', 'updated_at', 'updated_by']
 
     def create(self, validated_data):
+        # M9 fix: 用例 + 步骤原子创建 —— 步骤失败不留只有标题没有步骤的孤儿用例
+        from django.db import transaction
         steps_data = validated_data.pop('steps', [])
-        testcase = TestCase.objects.create(**validated_data)
-        for step in steps_data:
-            TestCaseStep.objects.create(test_case=testcase, **step)
+        with transaction.atomic():
+            testcase = TestCase.objects.create(**validated_data)
+            for step in steps_data:
+                TestCaseStep.objects.create(test_case=testcase, **step)
         return testcase
 
     def update(self, instance, validated_data):

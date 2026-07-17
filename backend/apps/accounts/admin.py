@@ -8,6 +8,8 @@ class UserProfileAdmin(admin.ModelAdmin):
     search_fields = ['user__username', 'phone']
     list_filter = ['role']
     list_select_related = ['user']
+    list_per_page = 50
+    show_full_result_count = False
 
 
 @admin.register(VerificationCode)
@@ -20,3 +22,5 @@ class VerificationCodeAdmin(admin.ModelAdmin):
     date_hierarchy = 'created_at'
     readonly_fields = ['code_hash']   # 仅展示，不可改
     ordering = ['-created_at']        # 默认按时间倒序，方便排查最近的发送/验证
+    list_per_page = 50
+    show_full_result_count = False

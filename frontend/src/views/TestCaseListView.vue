@@ -17,14 +17,14 @@
           </el-select>
         </el-col>
         <el-col :span="4">
-          <el-select v-model="filters.status" placeholder="状态筛选" clearable @change="fetchData">
+          <el-select v-model="filters.status" placeholder="状态筛选" clearable @change="onFilterChange">
             <el-option label="草稿" value="draft" />
             <el-option label="活跃" value="active" />
             <el-option label="已废弃" value="deprecated" />
           </el-select>
         </el-col>
         <el-col :span="4">
-          <el-select v-model="filters.priority" placeholder="优先级筛选" clearable @change="fetchData">
+          <el-select v-model="filters.priority" placeholder="优先级筛选" clearable @change="onFilterChange">
             <el-option label="P0-最高" value="P0" />
             <el-option label="P1-高" value="P1" />
             <el-option label="P2-中" value="P2" />
@@ -44,9 +44,9 @@
           <el-tag :type="priorityType(row.priority)" size="small">{{ row.priority }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="type" label="类型" width="100">
+      <el-table-column prop="case_type" label="类型" width="100">
         <template #default="{ row }">
-          {{ typeLabel(row.type) }}
+          {{ typeLabel(row.case_type) }}
         </template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="90">
@@ -103,6 +103,13 @@ watch(debouncedSearch, (val) => {
   page.value = 1
   fetchData()
 })
+
+// M27 fix: 任何 filter 变化都重置 page=1 —— 之前只有 search 改时会复位，
+// 状态/优先级切换不会，导致新数据可能落在空页
+function onFilterChange() {
+  page.value = 1
+  fetchData()
+}
 
 function typeLabel(t) {
   const map = { functional: '功能测试', api: '接口测试', ui: 'UI测试', performance: '性能测试' }

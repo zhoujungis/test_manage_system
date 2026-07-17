@@ -12,7 +12,7 @@ class TestRun(models.Model):
     ]
     test_plan = models.ForeignKey(TestPlan, on_delete=models.CASCADE, related_name='testruns', db_index=True)
     name = models.CharField(max_length=200)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_runs')
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -21,7 +21,7 @@ class TestRun(models.Model):
 
     class Meta:
         db_table = 'test_run'
-        ordering = ['-created_at']
+        # M1 fix: 删默认 ordering
 
     def __str__(self):
         return self.name
@@ -45,7 +45,10 @@ class TestResult(models.Model):
 
     class Meta:
         db_table = 'test_result'
-        unique_together = ['test_run', 'test_case']
+        # M3 fix: unique_together → UniqueConstraint
+        constraints = [
+            models.UniqueConstraint(fields=['test_run', 'test_case'], name='unique_test_run_case'),
+        ]
 
     def __str__(self):
         return f'{self.test_case.title} - {self.get_status_display()}'

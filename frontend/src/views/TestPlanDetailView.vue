@@ -32,7 +32,7 @@
     </el-table>
     <el-empty v-if="loaded && !(plan.plan_cases || []).length" description="该计划暂无用例，点击「添加用例」加入" :image-size="80" />
 
-    <el-dialog title="选择测试用例" v-model="caseDialogVisible" width="800px">
+    <el-dialog title="选择测试用例" v-model="caseDialogVisible" width="800px" :close-on-click-modal="false">
       <el-input v-model="caseSearch" placeholder="搜索用例标题" style="margin-bottom: 16px" />
       <el-table
         :data="filteredCases"

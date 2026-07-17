@@ -1,0 +1,1 @@
+# 公共常量集中地。避免魔法值散落在 serializer / view / settings。

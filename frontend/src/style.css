@@ -234,6 +234,19 @@ body {
   --el-descriptions-table-border: var(--tm-border);
 }
 
+/* M28 fix: 长中文描述默认会折叠；强制 pre-wrap 让换行 / 空格保留 */
+.el-descriptions__cell.is-bordered-value .el-descriptions__label + .el-descriptions__content,
+.el-descriptions .el-descriptions__content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* M36 fix: 表格行选中态高亮（PersonalProjectsView 等使用） */
+.el-table__row.selected-row,
+.el-table__row.selected-row td.el-table__cell {
+  background-color: #ecf5ff !important;
+}
+
 .el-empty {
   padding: 48px 0;
 }

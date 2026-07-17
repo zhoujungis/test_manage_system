@@ -13,7 +13,7 @@ class TestPlan(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='testplans', db_index=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', db_index=True)
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_testplans')
@@ -21,7 +21,7 @@ class TestPlan(models.Model):
 
     class Meta:
         db_table = 'test_plan'
-        ordering = ['-created_at']
+        # M1 fix: 删默认 ordering
 
     def __str__(self):
         return self.name
@@ -34,7 +34,10 @@ class TestPlanCase(models.Model):
 
     class Meta:
         db_table = 'test_plan_case'
-        ordering = ['order']
+        # M11 fix: plan_cases 列表按 test_plan + order 拉，加复合索引
+        indexes = [
+            models.Index(fields=['test_plan', 'order']),
+        ]
 
     def __str__(self):
         return f'{self.test_plan.name} - {self.test_case.title}'

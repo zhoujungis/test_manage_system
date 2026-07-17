@@ -117,8 +117,13 @@ def accessible_project_ids(user):
     - 其他：仅作为 ProjectMember 的项目
 
     返回 None 时调用方应理解为"不过滤"。
+
+    M15 fix: 必须同时有 can_access_projects 和 can_access_my_projects，否则
+    即使被禁用"我的项目"权限，仍能通过项目成员关系拿到 scope。
     """
-    if is_admin(user) or user_can_access_projects(user):
+    if is_admin(user):
+        return None
+    if user_can_access_projects(user) and user_can_access_my_projects(user):
         return None
     from apps.projects.models import Project
     return list(Project.objects.filter(members__user=user).values_list('id', flat=True))

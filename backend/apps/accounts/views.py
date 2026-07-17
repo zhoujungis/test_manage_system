@@ -46,7 +46,8 @@ _GENERIC_VERIFY_FAIL = '验证码错误或已过期，或该邮箱未注册'
 
 
 def _validate_glazero_email(email):
-    return email.endswith('@glazero.com')
+    from apps.common.constants import GLAZERO_EMAIL_SUFFIX
+    return email.endswith(GLAZERO_EMAIL_SUFFIX)
 
 
 def _issue_verification_code(email, purpose, subject, message_tpl):

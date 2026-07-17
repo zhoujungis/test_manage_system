@@ -40,10 +40,10 @@
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" />
         </el-form-item>
-        <el-form-item label="开始日期">
+        <el-form-item label="开始日期" prop="start_date">
           <el-date-picker v-model="form.start_date" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
-        <el-form-item label="结束日期">
+        <el-form-item label="结束日期" prop="end_date">
           <el-date-picker v-model="form.end_date" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item label="状态" v-if="editing.id">
@@ -77,8 +77,20 @@ const editing = reactive({})
 const form = reactive({ name: '', description: '', status: 'draft', start_date: null, end_date: null })
 // C12 fix: 真正的表单校验
 const formRef = ref(null)
+// M41 fix: 结束日期必须 ≥ 开始日期。两条路径都校验：blur 时 + 保存前。
 const rules = {
   name: [{ required: true, message: '请输入计划名称', trigger: 'blur' }],
+  end_date: [
+    {
+      validator: (rule, value, cb) => {
+        if (value && form.start_date && value < form.start_date) {
+          return cb(new Error('结束日期必须 ≥ 开始日期'))
+        }
+        cb()
+      },
+      trigger: 'change',
+    },
+  ],
 }
 
 function statusLabel(s) {

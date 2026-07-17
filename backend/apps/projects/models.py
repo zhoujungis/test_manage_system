@@ -13,8 +13,8 @@ class Project(models.Model):
     ]
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
-    product_line = models.CharField(max_length=20, choices=PRODUCT_LINE_CHOICES, default='camera')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', db_index=True)
+    product_line = models.CharField(max_length=20, choices=PRODUCT_LINE_CHOICES, default='camera', db_index=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='managed_projects')
     planned_start_date = models.DateField(null=True, blank=True)
     planned_end_date = models.DateField(null=True, blank=True)
@@ -57,7 +57,10 @@ class ProjectMember(models.Model):
 
     class Meta:
         db_table = 'project_member'
-        unique_together = ['project', 'user']
+        # M3/M13 fix: unique_together 已弃用（Django 5.1+）；改 UniqueConstraint
+        constraints = [
+            models.UniqueConstraint(fields=['project', 'user'], name='unique_project_member'),
+        ]
         ordering = ['joined_at']
 
     def __str__(self):

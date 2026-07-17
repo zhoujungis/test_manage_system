@@ -241,6 +241,13 @@ REST_FRAMEWORK = {
 if not DEBUG:
     SECURE_SSL_REDIRECT = _env_bool('DJANGO_SECURE_SSL_REDIRECT', 'True')
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # M7 fix: 显式声明反向代理层数。SECURE_PROXY_SSL_HEADER 单独使用会被客户端伪造 X-Forwarded-Proto。
+    # 部署环境按实际代理层数（典型 1 = 一个 nginx）配置；这里给个合理默认 + 启动校验。
+    _num_proxies = int(os.environ.get('DJANGO_NUM_PROXIES', '1'))
+    if _num_proxies < 0 or _num_proxies > 10:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured('DJANGO_NUM_PROXIES 必须在 0-10 之间（0=直连）')
+    SECURE_PROXY_SSL_HEADER_NUM_PROXIES = _num_proxies
     SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '31536000'))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS', 'True')
     SECURE_HSTS_PRELOAD = _env_bool('DJANGO_SECURE_HSTS_PRELOAD', 'False')
@@ -275,3 +282,46 @@ EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'True') == 'True'
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+
+# M7 fix: 结构化日志。生产开 LOG_TO_FILE 让审计动作落到文件；开发期保留控制台输出。
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} {levelname} {name} {process:d} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        # accounts.audit 由 accounts/views.py 在 admin_create_user / admin_delete_user /
+        # admin_update_user_permissions 写入，记录敏感管理动作。
+        'accounts.audit': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO' if not DEBUG else 'DEBUG',
+    },
+}
+if not DEBUG and _env_bool('DJANGO_LOG_TO_FILE', 'False'):
+    LOGGING['handlers']['audit_file'] = {
+        'class': 'logging.FileHandler',
+        'filename': BASE_DIR / 'logs' / 'audit.log',
+        'formatter': 'verbose',
+    }
+    LOGGING['loggers']['accounts.audit']['handlers'].append('audit_file')

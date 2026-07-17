@@ -40,7 +40,11 @@ export default defineConfig({
     },
   },
   build: {
-    target: 'es2020',
+    // M38 fix: target es2020 → es2022，新浏览器都支持，省下一些 polyfill
+    target: 'es2022',
+    // M39 fix: 把 <8KB 的资源 inline 成 data URI，省一次请求
+    assetsInlineLimit: 8192,
+    cssCodeSplit: true,
     rollupOptions: {
       output: {
         manualChunks(id) {

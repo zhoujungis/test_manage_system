@@ -80,7 +80,7 @@
         </div>
         <el-descriptions :column="3" border size="small">
           <el-descriptions-item label="优先级"><el-tag :type="pType(detail.priority)" size="small">{{ detail.priority }}</el-tag></el-descriptions-item>
-          <el-descriptions-item label="类型">{{ tLabel(detail.type) }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ tLabel(detail.case_type) }}</el-descriptions-item>
           <el-descriptions-item label="状态"><el-tag :type="sType(detail.status)" size="small">{{ sLabel(detail.status) }}</el-tag></el-descriptions-item>
           <el-descriptions-item label="创建人">{{ detail.created_by_name || '-' }}</el-descriptions-item>
           <el-descriptions-item label="修改人">{{ full?.updated_by_name || detail.updated_by_name || '-' }}</el-descriptions-item>

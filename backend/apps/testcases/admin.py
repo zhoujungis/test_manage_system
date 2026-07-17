@@ -9,11 +9,13 @@ class TestCaseStepInline(admin.TabularInline):
 
 @admin.register(TestCase)
 class TestCaseAdmin(admin.ModelAdmin):
-    list_display = ['id', 'title', 'project', 'module', 'priority', 'type', 'status', 'created_by', 'created_at']
+    list_display = ['id', 'title', 'project', 'module', 'priority', 'case_type', 'status', 'created_by', 'created_at']
     search_fields = ['title', 'description']
-    list_filter = ['priority', 'type', 'status', 'product_line', 'project']
+    list_filter = ['priority', 'case_type', 'status', 'product_line', 'project']
     list_select_related = ['project', 'module', 'created_by']
     date_hierarchy = 'created_at'
+    list_per_page = 50
+    show_full_result_count = False
     inlines = [TestCaseStepInline]
 
 

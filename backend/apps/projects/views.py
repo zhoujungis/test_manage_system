@@ -79,8 +79,11 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        project = serializer.save(created_by=self.request.user)
-        ProjectMember.objects.create(project=project, user=self.request.user, role='leader')
+        # M9 fix: project + 初始 member 必须原子 —— 不然 project 创建成功但 member 失败
+        # 会留下没有负责人的孤儿项目。
+        with transaction.atomic():
+            project = serializer.save(created_by=self.request.user)
+            ProjectMember.objects.create(project=project, user=self.request.user, role='leader')
 
     @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, ProjectMemberReadPermission])
     def modules(self, request, pk=None):
@@ -329,7 +332,8 @@ class TestCaseAssignmentViewSet(viewsets.ModelViewSet):
         upload = request.FILES.get('file')
         if not upload:
             return Response({'error': '请选择文件'}, status=status.HTTP_400_BAD_REQUEST)
-        max_size = getattr(settings, 'ASSIGNMENT_ATTACHMENT_MAX_BYTES', 15 * 1024 * 1024)
+        from apps.common.constants import ASSIGNMENT_ATTACHMENT_MAX_BYTES
+        max_size = getattr(settings, 'ASSIGNMENT_ATTACHMENT_MAX_BYTES', ASSIGNMENT_ATTACHMENT_MAX_BYTES)
         if upload.size > max_size:
             return Response({'error': '文件大小不能超过 15MB'}, status=status.HTTP_400_BAD_REQUEST)
         # H14 fix: 限制 MIME 和扩展名白名单；否则攻击者可传 .exe / .html / .svg 内嵌 JS

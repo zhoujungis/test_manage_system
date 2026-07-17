@@ -32,7 +32,7 @@ class Defect(models.Model):
 
     class Meta:
         db_table = 'defect'
-        ordering = ['-created_at']
+        # M1 fix: 删默认 ordering
 
     def __str__(self):
         return f'[{self.get_severity_display()}] {self.title}'

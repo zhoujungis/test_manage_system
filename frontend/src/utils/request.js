@@ -1,6 +1,6 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
 import router from '@/router'
+import { notifyError } from '@/utils/notify'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
@@ -133,12 +133,13 @@ request.interceptors.response.use(
             if (v && typeof v === 'object') return Object.values(v).flatMap(extract)
             return []
           }
+          // M42 fix: 把所有字段错误用 ; 拼接，避免「只显示第一条」让用户以为其他字段没问题
           const found = extract(data)
-          msg = found[0] || ''
+          msg = found.join('； ') || ''
         }
       }
       if (!msg) msg = '请求失败'
-      ElMessage({ message: msg, type: 'error', duration: 4500 })
+      notifyError(msg)
     }
     return Promise.reject(error)
   }
