@@ -1,35 +1,29 @@
 <template>
   <div class="page-container">
     <div class="page-header">
-      <h2>测试用例</h2>
+      <h2>{{ t('case.list') }}</h2>
       <div class="page-header__actions">
-        <el-button type="primary" @click="$router.push(`/projects/${projectId}/testcases/new`)">新建用例</el-button>
+        <el-button type="primary" @click="$router.push(`/projects/${projectId}/testcases/new`)">{{ t('case.new') }}</el-button>
       </div>
     </div>
     <div class="filter-card">
       <el-row :gutter="16">
         <el-col :span="4">
-          <el-input v-model="searchText" placeholder="搜索标题" clearable />
+          <el-input v-model="searchText" :placeholder="t('case.title')" clearable />
         </el-col>
         <el-col :span="4">
-          <el-select v-model="filters.module" placeholder="模块筛选" clearable @change="fetchData">
+          <el-select v-model="filters.module" :placeholder="t('case.module')" clearable @change="fetchData">
             <el-option v-for="m in modules" :key="m.id" :label="m.name" :value="m.id" />
           </el-select>
         </el-col>
         <el-col :span="4">
-          <el-select v-model="filters.status" placeholder="状态筛选" clearable @change="onFilterChange">
-            <el-option label="草稿" value="draft" />
-            <el-option label="活跃" value="active" />
-            <el-option label="已废弃" value="deprecated" />
+          <el-select v-model="filters.status" :placeholder="t('case.status')" clearable @change="onFilterChange">
+            <el-option v-for="(label, key) in statusLabels" :key="key" :label="label" :value="key" />
           </el-select>
         </el-col>
         <el-col :span="4">
-          <el-select v-model="filters.priority" placeholder="优先级筛选" clearable @change="onFilterChange">
-            <el-option label="P0-最高" value="P0" />
-            <el-option label="P1-高" value="P1" />
-            <el-option label="P2-中" value="P2" />
-            <el-option label="P3-低" value="P3" />
-            <el-option label="P4-最低" value="P4" />
+          <el-select v-model="filters.priority" :placeholder="t('case.priority')" clearable @change="onFilterChange">
+            <el-option v-for="key in ['P0','P1','P2','P3','P4']" :key="key" :label="priorityLabel(key)" :value="key" />
           </el-select>
         </el-col>
       </el-row>
@@ -37,31 +31,29 @@
     <div class="table-card">
     <el-table :data="testcases" v-loading="loading" stripe @row-click="(row) => $router.push(`/projects/${projectId}/testcases/${row.id}`)" style="cursor: pointer">
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="title" label="标题" show-overflow-tooltip />
-      <el-table-column prop="module_name" label="模块" width="120" />
-      <el-table-column prop="priority" label="优先级" width="100">
+      <el-table-column prop="title" :label="t('case.title')" show-overflow-tooltip />
+      <el-table-column prop="module_name" :label="t('case.module')" width="120" />
+      <el-table-column prop="priority" :label="t('case.priority')" width="100">
         <template #default="{ row }">
           <el-tag :type="priorityType(row.priority)" size="small">{{ row.priority }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="case_type" label="类型" width="100">
+      <el-table-column prop="case_type" :label="t('case.type')" width="100">
+        <template #default="{ row }">{{ typeLabel(row.case_type) }}</template>
+      </el-table-column>
+      <el-table-column prop="status" :label="t('case.status')" width="90">
         <template #default="{ row }">
-          {{ typeLabel(row.case_type) }}
+          <el-tag :type="testCaseStatusType(row.status)" size="small">{{ testCaseStatusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="90">
-        <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
-        </template>
+      <el-table-column prop="created_by_name" :label="t('case.creator')" width="120" />
+      <el-table-column prop="created_at" :label="t('case.createdAt')" width="170">
+        <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
       </el-table-column>
-      <el-table-column prop="created_by_name" label="创建人" width="120" />
-      <el-table-column prop="created_at" label="创建时间" width="170">
-        <template #default="{ row }">{{ row.created_at?.slice(0, 19).replace('T', ' ') }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="150" fixed="right">
+      <el-table-column :label="t('common.operation')" width="150" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click.stop="$router.push(`/projects/${projectId}/testcases/${row.id}`)">编辑</el-button>
-          <el-button size="small" type="danger" @click.stop="handleDelete(row)">删除</el-button>
+          <el-button size="small" @click.stop="$router.push(`/projects/${projectId}/testcases/${row.id}`)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" @click.stop="handleDelete(row)">{{ t('common.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -80,12 +72,18 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { getTestCases, deleteTestCase } from '@/api/testcases'
 import { getModules } from '@/api/projects'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDebounce } from '@/composables/useDebounce'
+import { useFormat } from '@/composables/useFormat'
+import { formatDateTime } from '@/utils/dateFormat'
+
+const { t } = useI18n()
+const { priorityType, priorityLabel, testCaseStatusType, testCaseStatusLabel } = useFormat()
 
 const route = useRoute()
 const projectId = route.params.id
@@ -98,35 +96,20 @@ const filters = reactive({ search: '', module: '', status: '', priority: '' })
 const searchText = ref('')
 const debouncedSearch = useDebounce(searchText, 300)
 
+const statusLabels = computed(() => t('status.testcase'))
+
 watch(debouncedSearch, (val) => {
   filters.search = val
   page.value = 1
   fetchData()
 })
 
-// M27 fix: 任何 filter 变化都重置 page=1 —— 之前只有 search 改时会复位，
-// 状态/优先级切换不会，导致新数据可能落在空页
 function onFilterChange() {
   page.value = 1
   fetchData()
 }
 
-function typeLabel(t) {
-  const map = { functional: '功能测试', api: '接口测试', ui: 'UI测试', performance: '性能测试' }
-  return map[t] || t
-}
-function statusLabel(s) {
-  const map = { draft: '草稿', active: '活跃', deprecated: '已废弃' }
-  return map[s] || s
-}
-function statusType(s) {
-  const map = { draft: 'info', active: 'success', deprecated: 'warning' }
-  return map[s] || 'info'
-}
-function priorityType(p) {
-  const map = { P0: 'danger', P1: 'danger', P2: 'warning', P3: 'info', P4: '' }
-  return map[p] || ''
-}
+const typeLabel = (v) => t(`case.typeLabels.${v}`) || v
 
 async function fetchData() {
   loading.value = true
@@ -145,9 +128,9 @@ async function fetchData() {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm('确定删除该用例？', '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`${t('common.delete')}「${row.title}」?`, t('common.confirm'), { type: 'warning' })
   await deleteTestCase(row.id)
-  ElMessage.success('删除成功')
+  ElMessage.success(t('msg.deleteSuccess'))
   fetchData()
 }
 

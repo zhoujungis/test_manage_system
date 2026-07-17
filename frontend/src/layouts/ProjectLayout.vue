@@ -9,28 +9,28 @@
     >
       <div class="project-sidebar__head" @click="$router.push('/projects')">
         <el-icon :size="18"><Folder /></el-icon>
-        <span v-if="!isMobile" class="project-sidebar__name">{{ project?.name || '项目' }}</span>
+        <span v-if="!isMobile" class="project-sidebar__name">{{ project?.name || t('crumb.project') }}</span>
       </div>
       <el-menu :default-active="activeMenu" class="project-sidebar__menu" router>
         <el-menu-item :index="`/projects/${projectId}/modules`">
           <el-icon><Grid /></el-icon>
-          <template #title>模块管理</template>
+          <template #title>{{ t('crumb.modules') }}</template>
         </el-menu-item>
         <el-menu-item :index="`/projects/${projectId}/testcases`">
           <el-icon><Collection /></el-icon>
-          <template #title>项目用例</template>
+          <template #title>{{ t('crumb.testcases') }}</template>
         </el-menu-item>
         <el-menu-item :index="`/projects/${projectId}/testplans`">
           <el-icon><List /></el-icon>
-          <template #title>测试计划</template>
+          <template #title>{{ t('crumb.testplans') }}</template>
         </el-menu-item>
         <el-menu-item :index="`/projects/${projectId}/testruns`">
           <el-icon><VideoPlay /></el-icon>
-          <template #title>测试执行</template>
+          <template #title>{{ t('crumb.testruns') }}</template>
         </el-menu-item>
         <el-menu-item :index="`/projects/${projectId}/defects`">
           <el-icon><WarningFilled /></el-icon>
-          <template #title>缺陷管理</template>
+          <template #title>{{ t('crumb.defects') }}</template>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -51,10 +51,12 @@
 
 <script setup>
 import { computed, watch, ref, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import request from '@/utils/request'
 import { Menu } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 const route = useRoute()
 const projectId = computed(() => route.params.id)
 const project = ref(null)

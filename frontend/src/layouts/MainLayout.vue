@@ -15,43 +15,44 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
 
+const { t } = useI18n()
 const route = useRoute()
 
 const isFlush = computed(() => route.meta?.flushMain === true)
 
-// 路径 → 中文标签的映射。matched 链能拿到模板字符串如 '/projects/:id'，
-// 用它做 key，再查表出 label。
-const CRUMB_LABELS = {
-  '/': '首页',
-  '/home': '工作台',
-  '/projects': '项目管理',
-  '/projects/:id': '项目详情',
-  '/projects/:id/modules': '模块管理',
-  '/projects/:id/testcases': '测试用例',
-  '/projects/:id/testplans': '测试计划',
-  '/projects/:id/testplans/:pid': '计划详情',
-  '/projects/:id/testruns': '测试执行',
-  '/projects/:id/testruns/:rid': '执行详情',
-  '/projects/:id/defects': '缺陷管理',
-  '/projects/:id/defects/:did': '缺陷详情',
-  '/testcases': '用例库',
-  '/testcases/:product_line': '用例库',
-  '/testcases/:product_line/new': '新建用例',
-  '/testcases/:product_line/:tid': '用例详情',
-  '/tm': '我的项目',
-  '/tm/:id/execute': '我的执行',
-  '/admin/users': '用户管理',
-  '/admin/permissions': '权限管理',
+// 路径 → i18n key 的映射。matched 链能拿到模板字符串如 '/projects/:id'。
+const CRUMB_KEYS = {
+  '/': 'crumb.home',
+  '/home': 'crumb.home',
+  '/projects': 'crumb.projects',
+  '/projects/:id': 'crumb.project',
+  '/projects/:id/modules': 'crumb.modules',
+  '/projects/:id/testcases': 'crumb.testcases',
+  '/projects/:id/testplans': 'crumb.testplans',
+  '/projects/:id/testplans/:pid': 'crumb.testplanDetail',
+  '/projects/:id/testruns': 'crumb.testruns',
+  '/projects/:id/testruns/:rid': 'crumb.testrunDetail',
+  '/projects/:id/defects': 'crumb.defects',
+  '/projects/:id/defects/:did': 'crumb.defectDetail',
+  '/testcases': 'crumb.library',
+  '/testcases/:product_line': 'crumb.library',
+  '/testcases/:product_line/new': 'crumb.testcaseNew',
+  '/testcases/:product_line/:tid': 'crumb.testcaseDetail',
+  '/tm': 'crumb.myProjectsRoot',
+  '/tm/:id/execute': 'crumb.myExecution',
+  '/admin/users': 'menu.adminUsers',
+  '/admin/permissions': 'menu.adminPermissions',
 }
 
 const crumbs = computed(() => {
   return route.matched
     .filter((r) => r.meta && r.meta.noAuth !== true && r.path !== '')
     .map((r) => ({
-      label: CRUMB_LABELS[r.path] || r.meta?.title || r.path,
+      label: t(CRUMB_KEYS[r.path] || r.meta?.title || r.path),
       to: { path: r.path.replace(/:(\w+)/g, (_, k) => route.params[k] || '') },
     }))
 })

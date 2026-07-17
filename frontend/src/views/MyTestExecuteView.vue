@@ -914,8 +914,8 @@ onBeforeUnmount(() => {
 }
 
 .exec-step__tag--ok {
-  background: #d1fae5;
-  color: #047857;
+  background: var(--tm-stat-pass-bg);
+  color: var(--tm-stat-pass-fg);
 }
 
 .exec-attachments {
