@@ -5,10 +5,11 @@ import { createPinia } from 'pinia'
 // 各组件 CSS 已在 Vite 编译期由 unplugin-vue-components + ElementPlusResolver()
 // 自动注入。
 import './style.css'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import App from './App.vue'
 import router from './router'
+import { i18n } from '@/i18n'
 import { notifyError } from '@/utils/notify'
+import { applyTheme, initTheme } from '@/composables/useTheme'
 
 // F10 fix: 不再 app.use(ElementPlus) —— 现在 Element Plus 组件与 icons
 // 在 Vite 编译期由 unplugin-vue-components 自动按需 import，详见 vite.config.js。
@@ -19,6 +20,10 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
+app.use(i18n)
+// DARK-1: 应用启动时同步主题（localStorage → DOM）
+initTheme()
+applyTheme()
 
 // M23 fix: 全局错误兜底 — 之前只 console.error；现在弹一个用户可见的提示。
 // 这里也可以接 sentry 等上报（注释里挂 TODO）。

@@ -3,7 +3,7 @@
     <UserIdentityCard />
 
     <div class="home-section">
-      <h2 class="home-section__title">功能入口</h2>
+      <h2 class="home-section__title">{{ t('home.title') }}</h2>
       <p class="text-muted home-section__sub">{{ sectionSub }}</p>
     </div>
 
@@ -18,8 +18,8 @@
           <el-icon :size="28"><component :is="card.icon" /></el-icon>
         </div>
         <div class="home-card__body">
-          <h3>{{ card.title }}</h3>
-          <p>{{ card.desc }}</p>
+          <h3>{{ t(card.titleKey) }}</h3>
+          <p>{{ t(card.descKey) }}</p>
         </div>
         <el-icon class="home-card__arrow"><ArrowRight /></el-icon>
       </router-link>
@@ -29,10 +29,12 @@
 
 <script setup>
 import { computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import UserIdentityCard from '@/components/UserIdentityCard.vue'
 import { useUserIdentity } from '@/composables/useUserIdentity'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const { canAccessProjects, canAccessTestCaseLibrary, canAccessMyProjects, isAdmin } = useUserIdentity()
 
@@ -42,32 +44,32 @@ onMounted(() => {
 
 const allModules = [
   {
-    title: '测试用例库',
-    desc: '按产品线管理摄像头、门铃等通用测试用例',
+    titleKey: 'home.casesModule',
+    descKey: 'home.casesDesc',
     to: '/testcases/camera',
     icon: 'Document',
     gradient: 'linear-gradient(135deg, #4f6ef7, #818cf8)',
     show: () => canAccessTestCaseLibrary.value,
   },
   {
-    title: '项目管理',
-    desc: '创建项目，管理模块、计划、执行与缺陷',
+    titleKey: 'home.projectsModule',
+    descKey: 'home.projectsDesc',
     to: '/projects',
     icon: 'FolderOpened',
     gradient: 'linear-gradient(135deg, #10b981, #34d399)',
     show: () => canAccessProjects.value,
   },
   {
-    title: '我的项目',
-    desc: '查看参与的项目并执行分配的测试任务',
+    titleKey: 'home.myTasksModule',
+    descKey: 'home.myTasksDesc',
     to: '/tm',
     icon: 'User',
     gradient: 'linear-gradient(135deg, #f59e0b, #fbbf24)',
     show: () => canAccessMyProjects.value,
   },
   {
-    title: '权限管理',
-    desc: '配置非管理员用户的功能访问权限',
+    titleKey: 'home.adminModule',
+    descKey: 'home.adminDesc',
     to: '/admin/permissions',
     icon: 'Setting',
     gradient: 'linear-gradient(135deg, #ef4444, #f87171)',
@@ -76,8 +78,7 @@ const allModules = [
 ]
 
 const modules = computed(() => allModules.filter((m) => m.show()))
-
-const sectionSub = computed(() => '选择模块进入对应功能')
+const sectionSub = computed(() => t('home.welcome', { name: auth.user?.username || '' }))
 </script>
 
 <style scoped>

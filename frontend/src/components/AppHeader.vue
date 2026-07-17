@@ -4,7 +4,7 @@
       <div class="app-header__logo">
         <el-icon :size="20"><Monitor /></el-icon>
       </div>
-      <span class="app-header__title">测试管理系统</span>
+      <span class="app-header__title">{{ t('common.appName') }}</span>
     </div>
 
     <nav class="global-nav app-header__nav">
@@ -16,11 +16,33 @@
         :class="{ 'is-active': isNavActive(item) }"
       >
         <el-icon :size="14"><component :is="item.icon" /></el-icon>
-        {{ item.label }}
+        {{ t(item.labelKey) }}
       </router-link>
     </nav>
 
     <div class="app-header__right">
+      <!-- I18N-4: 语言切换 -->
+      <el-dropdown trigger="click" @command="onLocaleChange" class="app-header__locale">
+        <span class="app-header__iconbtn">
+          <el-icon><Position /></el-icon>
+          <span class="app-header__locale-label">{{ currentLocaleLabel }}</span>
+        </span>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-for="l in SUPPORTED_LOCALES" :key="l" :command="l">
+              {{ t(`lang.${l === 'zh-CN' ? 'zh' : 'en'}`) }}
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+
+      <!-- DARK-1: 主题切换 -->
+      <el-tooltip :content="t('theme.toggle')" placement="bottom">
+        <el-button text circle class="app-header__iconbtn" @click="onToggleTheme">
+          <el-icon><component :is="themeIcon" /></el-icon>
+        </el-button>
+      </el-tooltip>
+
       <UserBar />
     </div>
   </header>
@@ -29,20 +51,41 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import UserBar from './UserBar.vue'
 import { useUserIdentity } from '@/composables/useUserIdentity'
+import { useTheme, THEMES } from '@/composables/useTheme'
+import { setLocale, SUPPORTED_LOCALES } from '@/i18n'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const { canAccessProjects, canAccessTestCaseLibrary, canAccessMyProjects, isAdmin } = useUserIdentity()
+const { theme, toggleTheme } = useTheme()
+
+const themeIcon = computed(() => (theme.value === 'dark' ? 'Moon' : 'Sunny'))
+const currentLocaleLabel = computed(() => {
+  // 只显示「中 / En」避免 header 太长
+  return SUPPORTED_LOCALES.find((l) => l === getCurrentLocaleShort()) || '中'
+})
+function getCurrentLocaleShort() {
+  return (typeof localStorage !== 'undefined' && localStorage.getItem('tm_locale')) || 'zh-CN'
+}
+
+function onLocaleChange(locale) {
+  setLocale(locale)
+}
+function onToggleTheme() {
+  toggleTheme()
+}
 
 const allNavItems = [
-  { label: '首页', to: '/home', icon: 'HomeFilled', match: /^\/home$/ },
-  { label: '测试用例库', to: '/testcases/camera', icon: 'Document', match: /^\/testcases/, show: () => canAccessTestCaseLibrary.value },
-  { label: '项目管理', to: '/projects', icon: 'FolderOpened', match: /^\/projects/, show: () => canAccessProjects.value },
-  { label: '我的项目', to: '/tm', icon: 'User', match: /^\/tm/, show: () => canAccessMyProjects.value && !isAdmin.value },
-  { label: '权限管理', to: '/admin/permissions', icon: 'Setting', match: /^\/admin\/permissions/, show: () => isAdmin.value },
-  { label: '用户管理', to: '/admin/users', icon: 'UserFilled', match: /^\/admin\/users/, show: () => isAdmin.value },
+  { labelKey: 'menu.home', to: '/home', icon: 'HomeFilled', match: /^\/home$/ },
+  { labelKey: 'menu.testcases', to: '/testcases/camera', icon: 'Document', match: /^\/testcases/, show: () => canAccessTestCaseLibrary.value },
+  { labelKey: 'menu.projects', to: '/projects', icon: 'FolderOpened', match: /^\/projects/, show: () => canAccessProjects.value },
+  { labelKey: 'menu.myProjects', to: '/tm', icon: 'User', match: /^\/tm/, show: () => canAccessMyProjects.value && !isAdmin.value },
+  { labelKey: 'menu.adminPermissions', to: '/admin/permissions', icon: 'Setting', match: /^\/admin\/permissions/, show: () => isAdmin.value },
+  { labelKey: 'menu.adminUsers', to: '/admin/users', icon: 'UserFilled', match: /^\/admin\/users/, show: () => isAdmin.value },
 ]
 
 const visibleNavItems = computed(() => allNavItems.filter((item) => !item.show || item.show()))
@@ -102,7 +145,31 @@ function isNavActive(item) {
 }
 
 .app-header__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+.app-header__iconbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  height: 32px;
+  border-radius: var(--tm-radius-sm);
+  cursor: pointer;
+  color: var(--tm-text-secondary);
+  font-size: 13px;
+}
+
+.app-header__iconbtn:hover {
+  background: var(--tm-surface-2);
+  color: var(--tm-text);
+}
+
+.app-header__locale-label {
+  font-weight: 500;
 }
 
 @media (max-width: 768px) {
