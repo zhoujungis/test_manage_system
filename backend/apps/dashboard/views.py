@@ -5,6 +5,7 @@ from django.db.models import Count, Q
 from apps.accounts.permissions import accessible_project_ids
 from apps.projects.models import Project
 from apps.testcases.models import TestCase
+from apps.testcases.views import _parse_int_query_param
 from apps.testplans.models import TestPlan
 from apps.testruns.models import TestRun, TestResult
 from apps.defects.models import Defect
@@ -26,8 +27,9 @@ def stats(request):
         plan_q = Q(project_id__in=scoped)
         via_plan_q = Q(test_plan__project_id__in=scoped)
 
-    project_id = request.query_params.get('project')
-    if project_id:
+    project_id, err = _parse_int_query_param(request, 'project')
+    if err: return err
+    if project_id is not None:
         # C1 fix: ?project= drill-down 必须落在 scope 内，做交集防止 IDOR
         # （之前直接 Q(project_id=project_id) 覆盖了 scope 过滤）
         # 再叠加 C-重审 fix: Project 用 id，其它外键用 project_id；

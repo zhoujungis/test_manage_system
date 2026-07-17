@@ -360,7 +360,7 @@
 import { ref, reactive, onMounted, watch, nextTick } from 'vue'
 import { getProjects, createProject, updateProject, deleteProject, getModules, getMembers, addMember, removeMember, getTasks, createTask, updateTask, deleteTask, getCaseAssignments, createCaseAssignment, updateCaseAssignment, deleteCaseAssignment, batchApprove } from '@/api/projects'
 import { getTestCases } from '@/api/testcases'
-import { getUserList } from '@/api/users'
+import { getUserList } from '@/api/admin'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserIdentity } from '@/composables/useUserIdentity'
 
@@ -586,7 +586,9 @@ const assignmentCache = ref(null)
 
 async function loadAssignments(params = {}) {
   if (!selectedProject.value) return []
-  const key = JSON.stringify(params)
+  // H45 fix: cache key 必须含 projectId —— 否则切项目后旧 cache 会命中，
+  // 显示上一个项目的分配数据。
+  const key = `${selectedProject.value.id}::${JSON.stringify(params)}`
   if (assignmentCache.value?.key === key) return assignmentCache.value.data
   try {
     const data = await getCaseAssignments(selectedProject.value.id, params)

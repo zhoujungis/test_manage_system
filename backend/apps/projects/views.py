@@ -3,6 +3,7 @@ from django.db.models import Count
 from django.core.cache import cache
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.accounts.permissions import (
@@ -23,6 +24,36 @@ from .serializers import (
     ProjectTaskSerializer, TestCaseAssignmentSerializer,
     TestCaseAssignmentTreeSerializer, AssignmentAttachmentSerializer,
 )
+
+
+class _ActionPagination(PageNumberPagination):
+    """H4 fix: 自定义 @action 默认返回不带分页；这个 paginator 给嵌套端点用。"""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+    def _paginate(self, qs, request, view=None):
+        # 若调用方传 ?all=1 则不分页（保持向后兼容）
+        if request.query_params.get('all') == '1':
+            return list(qs), None
+        self.request = request
+        page = self.paginate_queryset(qs, request, view=view)
+        return page, self
+
+
+def paginated_response(qs, serializer_class, request, view=None):
+    """H4 fix helper: 序列化 + 分页，返回带 count/next/previous/results 的标准响应。
+    自定义 @action 直接 return Response(serializer.data) 会绕过全局分页器。
+    """
+    paginator = _ActionPagination()
+    page = paginator.paginate_queryset(qs, request, view=view)
+    if page is not None:
+        serializer = serializer_class(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+    # 不分页路径（all=1 或空 queryset）
+    serializer = serializer_class(qs, many=True)
+    return Response({'count': qs.count() if hasattr(qs, 'count') else len(qs),
+                     'next': None, 'previous': None, 'results': serializer.data})
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
@@ -54,9 +85,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, ProjectMemberReadPermission])
     def modules(self, request, pk=None):
         project = self.get_object()
-        modules = project.modules.all()
-        serializer = ModuleSerializer(modules, many=True)
-        return Response(serializer.data)
+        # H4 fix: 模块列表走分页
+        return paginated_response(project.modules.all(), ModuleSerializer, request, self)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def add_module(self, request, pk=None):
@@ -73,9 +103,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def members(self, request, pk=None):
         project = self.get_object()
         if request.method == 'GET':
+            # H4 fix: 成员列表走分页
             qs = project.members.select_related('user').all()
-            serializer = ProjectMemberSerializer(qs, many=True)
-            return Response(serializer.data)
+            return paginated_response(qs, ProjectMemberSerializer, request, self)
         serializer = ProjectMemberSerializer(data=request.data, context={'project': project})
         if serializer.is_valid():
             serializer.save(project=project)
@@ -86,9 +116,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def tasks(self, request, pk=None):
         project = self.get_object()
         if request.method == 'GET':
+            # H4 fix: 任务列表走分页
             qs = project.tasks.select_related('assigned_to', 'created_by').all()
-            serializer = ProjectTaskSerializer(qs, many=True)
-            return Response(serializer.data)
+            return paginated_response(qs, ProjectTaskSerializer, request, self)
         serializer = ProjectTaskSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save(project=project, created_by=request.user)
@@ -116,7 +146,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 if cached is not None:
                     return Response(cached)
 
-            qs = project.case_assignments.select_related('test_case__module', 'assigned_to', 'task').all()
+            qs = project.case_assignments.select_related(
+                'test_case__module', 'test_case__project', 'assigned_to', 'task'
+            ).prefetch_related('attachments', 'attachments__uploaded_by').all()
             assigned_to = request.query_params.get('assigned_to')
             if assigned_to == 'me':
                 qs = qs.filter(assigned_to=request.user)
@@ -261,7 +293,7 @@ class ProjectTaskViewSet(viewsets.ModelViewSet):
 
 class TestCaseAssignmentViewSet(viewsets.ModelViewSet):
     queryset = TestCaseAssignment.objects.select_related(
-        'test_case', 'assigned_to', 'project'
+        'test_case__module', 'test_case__project', 'assigned_to', 'project', 'task'
     ).prefetch_related('attachments', 'attachments__uploaded_by').all()
     serializer_class = TestCaseAssignmentSerializer
     permission_classes = [IsAuthenticated, TestCaseAssignmentPermission]
@@ -291,8 +323,8 @@ class TestCaseAssignmentViewSet(viewsets.ModelViewSet):
 
         if request.method == 'GET':
             qs = assignment.attachments.select_related('uploaded_by').all()
-            serializer = AssignmentAttachmentSerializer(qs, many=True, context={'request': request})
-            return Response(serializer.data)
+            # H4 fix: 附件列表走分页
+            return paginated_response(qs, AssignmentAttachmentSerializer, request, self)
 
         upload = request.FILES.get('file')
         if not upload:
@@ -300,6 +332,28 @@ class TestCaseAssignmentViewSet(viewsets.ModelViewSet):
         max_size = getattr(settings, 'ASSIGNMENT_ATTACHMENT_MAX_BYTES', 15 * 1024 * 1024)
         if upload.size > max_size:
             return Response({'error': '文件大小不能超过 15MB'}, status=status.HTTP_400_BAD_REQUEST)
+        # H14 fix: 限制 MIME 和扩展名白名单；否则攻击者可传 .exe / .html / .svg 内嵌 JS
+        _BLOCKED_EXT = {
+            '.exe', '.bat', '.cmd', '.sh', '.ps1',
+            '.html', '.htm', '.svg', '.js', '.jsx', '.ts', '.mjs',
+            '.jar', '.war', '.php', '.py', '.rb',
+            '.msi', '.scr', '.vbs', '.wsf',
+        }
+        import os
+        _ext = os.path.splitext(upload.name)[1].lower()
+        if _ext in _BLOCKED_EXT:
+            return Response({'error': f'不允许上传 {_ext} 类型的文件'}, status=status.HTTP_400_BAD_REQUEST)
+        _ALLOWED_MIMES_PREFIX = (
+            'image/', 'text/', 'application/pdf', 'application/zip',
+            'application/json', 'application/xml',
+            'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument',
+            'application/msword', 'application/octet-stream',  # 通用二进制
+        )
+        if not (upload.content_type or '').startswith(_ALLOWED_MIMES_PREFIX):
+            return Response(
+                {'error': f'不支持的 MIME 类型: {upload.content_type}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         att = AssignmentAttachment.objects.create(
             assignment=assignment,
@@ -334,8 +388,9 @@ def library_modules(request):
     product_line = (request.query_params.get('product_line') or request.data.get('product_line') or '').strip()
 
     if request.method == 'GET':
-        modules = Module.objects.filter(project__product_line=product_line).select_related('project')
-        return Response(ModuleSerializer(modules, many=True).data)
+        # H4 fix: 用例库模块列表走分页
+        qs = Module.objects.filter(project__product_line=product_line).select_related('project')
+        return paginated_response(qs, ModuleSerializer, request)
 
     if not (user_can_write_projects(request.user) or user_can_manage_testcase_library(request.user)):
         return Response({'detail': '无权添加模块'}, status=status.HTTP_403_FORBIDDEN)
@@ -344,9 +399,14 @@ def library_modules(request):
     if not name:
         return Response({'error': '模块名称不能为空'}, status=status.HTTP_400_BAD_REQUEST)
 
-    project = Project.objects.filter(product_line=product_line).first() or Project.objects.first()
+    # H16 fix: 不再静默 fallback 到 Project.objects.first() —— 那会让 product_line
+    # 不匹配的模块挂到任意项目上，无审计。加一个明确 product_line 的项目必须存在。
+    project = Project.objects.filter(product_line=product_line).first()
     if not project:
-        return Response({'error': '系统中暂无项目，请先创建项目'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'error': f'当前产品线 {product_line} 下暂无项目，请先在该产品线下创建项目'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     module = Module.objects.create(project=project, name=name)
     serializer = ModuleSerializer(module)

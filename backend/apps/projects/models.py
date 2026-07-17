@@ -51,7 +51,7 @@ class ProjectMember(models.Model):
         ('developer', '开发人员'),
     ]
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='members')
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='project_memberships')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='project_memberships')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='tester')
     joined_at = models.DateTimeField(auto_now_add=True)
 

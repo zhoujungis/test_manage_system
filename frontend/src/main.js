@@ -1,6 +1,9 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import 'element-plus/dist/index.css'
+// H26 fix: 不再全量 import element-plus/dist/index.css —— 之前 vendor chunk
+// 因为它一直背着 ~1000KB CSS，抵消了 vite.config.js 里按需加载的优化。
+// 各组件 CSS 已在 Vite 编译期由 unplugin-vue-components + ElementPlusResolver()
+// 自动注入。
 import './style.css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import App from './App.vue'

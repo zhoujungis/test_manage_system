@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import TestPlan, TestPlanCase
 from apps.testcases.serializers import TestCaseListSerializer
+from apps.projects.serializers import _annotated_or
 
 
 class TestPlanCaseSerializer(serializers.ModelSerializer):
@@ -22,7 +23,8 @@ class TestPlanListSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_by', 'created_at']
 
     def get_case_count(self, obj):
-        return getattr(obj, 'case_count', obj.plan_cases.count())
+        # H1 fix: 别在 fallback 里写 .count() → 即使有 annotation 也会触发
+        return _annotated_or(obj, 'case_count', lambda: obj.plan_cases.count())
 
 
 class TestPlanDetailSerializer(serializers.ModelSerializer):

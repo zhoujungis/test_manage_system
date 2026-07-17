@@ -3,6 +3,19 @@ from django.contrib.auth.models import User
 from .models import Project, Module, ProjectMember, ProjectTask, TestCaseAssignment, AssignmentAttachment
 
 
+def _annotated_or(obj, attr, fallback_callable):
+    """H1 fix: 优先取 view 层 annotate 出来的值；取不到再走 fallback。
+
+    原写法 getattr(obj, attr, obj.x.count()) 的坑：Python 在调用 getattr 前
+    就已经把 obj.x.count() 求值完了 → 即使 view 已经 annotate 了，仍然每次都
+    打一次 count()，每行多 1-5 个 N+1 查询。
+    """
+    val = getattr(obj, attr, None)
+    if val is not None:
+        return val
+    return fallback_callable()
+
+
 class ModuleSerializer(serializers.ModelSerializer):
     children = serializers.SerializerMethodField()
     case_count = serializers.SerializerMethodField()
@@ -12,7 +25,7 @@ class ModuleSerializer(serializers.ModelSerializer):
         fields = ['id', 'project', 'parent', 'name', 'description', 'case_count', 'children']
 
     def get_case_count(self, obj):
-        return getattr(obj, 'case_count', obj.testcases.count())
+        return _annotated_or(obj, 'case_count', lambda: obj.testcases.count())
 
     def get_children(self, obj):
         if hasattr(obj, 'children'):
@@ -36,19 +49,19 @@ class ProjectSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at', 'created_by']
 
     def get_module_count(self, obj):
-        return getattr(obj, 'module_count', obj.modules.count())
+        return _annotated_or(obj, 'module_count', lambda: obj.modules.count())
 
     def get_testcase_count(self, obj):
-        return getattr(obj, 'testcase_count', obj.testcases.count())
+        return _annotated_or(obj, 'testcase_count', lambda: obj.testcases.count())
 
     def get_testplan_count(self, obj):
-        return getattr(obj, 'testplan_count', obj.testplans.count())
+        return _annotated_or(obj, 'testplan_count', lambda: obj.testplans.count())
 
     def get_member_count(self, obj):
-        return getattr(obj, 'member_count', obj.members.count())
+        return _annotated_or(obj, 'member_count', lambda: obj.members.count())
 
     def get_task_count(self, obj):
-        return getattr(obj, 'task_count', obj.tasks.count())
+        return _annotated_or(obj, 'task_count', lambda: obj.tasks.count())
 
     def get_created_by_name(self, obj):
         if obj.created_by:

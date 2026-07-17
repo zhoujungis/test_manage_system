@@ -1,9 +1,11 @@
 from django.db.models import Count
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.accounts.permissions import accessible_project_ids
+from apps.testcases.views import _parse_int_query_param
 from .models import TestPlan, TestPlanCase
 from .serializers import TestPlanListSerializer, TestPlanDetailSerializer
 
@@ -12,14 +14,22 @@ class TestPlanViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        # H3 fix: TestPlanDetailSerializer 访问 plan_cases.test_case.*；
+        # 加 prefetch + nested select_related，避免每条 case 多 1-3 个 FK 查询。
         qs = TestPlan.objects.select_related('created_by', 'project').annotate(
             case_count=Count('plan_cases'),
+        ).prefetch_related(
+            'plan_cases__test_case__project',
+            'plan_cases__test_case__module',
+            'plan_cases__test_case__created_by',
+            'plan_cases__test_case__updated_by',
         )
         # SECURITY: 非管理类用户只能看到自己有成员关系的项目下的计划（C4）
         scoped = accessible_project_ids(self.request.user)
         if scoped is not None:
             qs = qs.filter(project_id__in=scoped)
-        project_id = self.request.query_params.get('project')
+        project_id, err = _parse_int_query_param(self.request, 'project')
+        if err: raise ValidationError({'project': '必须是整数'})
         if project_id:
             # C2 fix: ?project= 必须落在 scope 内，做交集防止 IDOR
             if scoped is not None:

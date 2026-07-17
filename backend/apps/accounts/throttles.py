@@ -76,6 +76,19 @@ class SendResetCodeRateThrottle(SimpleRateThrottle):
         return self.get_ident(request)
 
 
+class SendCodeDailyCap(SimpleRateThrottle):
+    """H19 fix: 防止 attacker 借 throttle 1/min 的间隙一日发 1440 封邮件。
+    与 SendCodeRateThrottle / SendResetCodeRateThrottle 串联，单一邮箱上限 20/天。
+    """
+    scope = 'send_code_day'
+
+    def get_cache_key(self, request, view):
+        email = _norm_email(request.data.get('email', ''))
+        if email:
+            return f'send_code_day_{email}'
+        return self.get_ident(request)
+
+
 class RefreshRateThrottle(SimpleRateThrottle):
     """M4 fix: 限制 /refresh/ 端的暴力 / 滥用调用。
     Key 仅用 IP —— refresh 端点没有 email 输入，没法做 email+IP 双维度。"""

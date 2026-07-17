@@ -130,7 +130,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
@@ -259,13 +259,25 @@ const changeRules = {
   ],
 }
 
+// H31 fix: 60s 倒计时 setInterval 在 onBeforeUnmount 时统一清除 ——
+// 之前只在自己的 timer 内清，组件销毁/tab 切换/路由变化时仍然会跑完
+// 整段 60s 并尝试写已无人订阅的 ref。
+const cooldownTimers = new Set()
 function startCooldown(target) {
   target.value = 60
   const timer = setInterval(() => {
     target.value--
-    if (target.value <= 0) clearInterval(timer)
+    if (target.value <= 0) {
+      clearInterval(timer)
+      cooldownTimers.delete(timer)
+    }
   }, 1000)
+  cooldownTimers.add(timer)
 }
+onBeforeUnmount(() => {
+  for (const t of cooldownTimers) clearInterval(t)
+  cooldownTimers.clear()
+})
 
 async function sendRegisterCode() {
   if (!registerForm.email?.endsWith('@glazero.com')) {

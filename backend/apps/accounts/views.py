@@ -29,6 +29,7 @@ from .serializers import (
 )
 from .throttles import (
     SendCodeRateThrottle,
+    SendCodeDailyCap,
     SendResetCodeRateThrottle,
     ChangePasswordRateThrottle,
     VerifyCodeRateThrottle,
@@ -95,7 +96,7 @@ def _verify_code(email, code, purpose):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle, SendCodeRateThrottle])
+@throttle_classes([AnonRateThrottle, SendCodeRateThrottle, SendCodeDailyCap])
 def send_code(request):
     email = request.data.get('email', '').strip()
     if not _validate_glazero_email(email):
@@ -112,7 +113,7 @@ def send_code(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle, SendResetCodeRateThrottle])
+@throttle_classes([AnonRateThrottle, SendResetCodeRateThrottle, SendCodeDailyCap])
 def send_reset_code(request):
     email = request.data.get('email', '').strip()
     if not _validate_glazero_email(email):

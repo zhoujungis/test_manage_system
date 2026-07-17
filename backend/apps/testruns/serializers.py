@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import TestRun, TestResult
 from apps.testcases.serializers import TestCaseListSerializer
+from apps.projects.serializers import _annotated_or
 
 
 class TestResultSerializer(serializers.ModelSerializer):
@@ -33,13 +34,13 @@ class TestRunListSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_by', 'created_at']
 
     def get_total(self, obj):
-        return getattr(obj, 'total', obj.results.count())
+        return _annotated_or(obj, 'total', lambda: obj.results.count())
 
     def get_passed(self, obj):
-        return getattr(obj, 'passed', obj.results.filter(status='pass').count())
+        return _annotated_or(obj, 'passed', lambda: obj.results.filter(status='pass').count())
 
     def get_failed(self, obj):
-        return getattr(obj, 'failed', obj.results.filter(status='fail').count())
+        return _annotated_or(obj, 'failed', lambda: obj.results.filter(status='fail').count())
 
 
 class TestRunDetailSerializer(serializers.ModelSerializer):

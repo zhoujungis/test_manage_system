@@ -1,6 +1,8 @@
 from rest_framework import viewsets
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from apps.accounts.permissions import accessible_project_ids
+from apps.testcases.views import _parse_int_query_param
 from .models import Defect
 from .serializers import DefectListSerializer, DefectDetailSerializer
 
@@ -14,7 +16,8 @@ class DefectViewSet(viewsets.ModelViewSet):
         scoped = accessible_project_ids(self.request.user)
         if scoped is not None:
             qs = qs.filter(project_id__in=scoped)
-        project_id = self.request.query_params.get('project')
+        project_id, err = _parse_int_query_param(self.request, 'project')
+        if err: raise ValidationError({'project': '必须是整数'})
         status_filter = self.request.query_params.get('status')
         severity = self.request.query_params.get('severity')
         if project_id:

@@ -1,10 +1,11 @@
 from django.db import transaction
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.accounts.permissions import TestCaseLibraryPermission
+from apps.accounts.permissions import TestCaseLibraryPermission, accessible_project_ids
 from .models import TestCase
 from .serializers import TestCaseListSerializer, TestCaseDetailSerializer
 
@@ -20,14 +21,33 @@ class AllOrPagedPagination(PageNumberPagination):
         return super().paginate_queryset(queryset, request, view)
 
 
+def _parse_int_query_param(request, name):
+    """H8 fix: 把 ?project=abc 这种垃圾输入转 400 而不是 ValueError 500。
+    返回 (int|None, None) 或 (None, Response(400))。
+    """
+    raw = request.query_params.get(name)
+    if raw is None or raw == '':
+        return None, None
+    try:
+        return int(raw), None
+    except (TypeError, ValueError):
+        return None, Response({name: f'必须是整数'}, status=400)
+
+
 class TestCaseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, TestCaseLibraryPermission]
     pagination_class = AllOrPagedPagination
 
     def get_queryset(self):
         qs = TestCase.objects.select_related('project', 'module', 'created_by', 'updated_by').all()
-        project_id = self.request.query_params.get('project')
-        module_id = self.request.query_params.get('module')
+        # H15 fix: 非管理员按项目成员关系 scope，避免有 library 权限的 tester 看任意项目用例
+        scoped = accessible_project_ids(self.request.user)
+        if scoped is not None:
+            qs = qs.filter(project_id__in=scoped)
+        project_id, err = _parse_int_query_param(self.request, 'project')
+        if err: raise ValidationError({'project': '必须是整数'})
+        module_id, err = _parse_int_query_param(self.request, 'module')
+        if err: raise ValidationError({'module': '必须是整数'})
         status_filter = self.request.query_params.get('status')
         priority = self.request.query_params.get('priority')
         type_filter = self.request.query_params.get('type')
@@ -89,7 +109,7 @@ def testcase_tree(request):
     try:
         limit = min(int(request.query_params.get('limit', '500')), 2000)
     except (TypeError, ValueError):
-        limit = 500
+        return Response({'error': 'limit 必须是整数'}, status=400)
 
     qs = qs.order_by('-created_at')[:limit]
     data = [

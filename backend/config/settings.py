@@ -228,6 +228,7 @@ REST_FRAMEWORK = {
         'anon': '100/hour',
         'user': '1000/hour',          # 已登录用户全局兜底（端点可再缩紧）
         'send_code': '1/min',         # 发送注册验证码：每邮箱每分钟一次
+        'send_code_day': '20/day',    # H19 fix: 每邮箱每天上限 20 封（防邮件轰炸）
         'send_reset_code': '1/min',   # 发送重置验证码：每邮箱每分钟一次
         'verify_code': '10/min',      # register / reset_password：每 (email, IP) 每分钟 10 次
         'login': '5/min',             # 已用 (ip, email) 双维度

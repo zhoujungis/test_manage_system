@@ -85,7 +85,14 @@ async function handleComplete() {
 
 async function handleResult(resultId, status) {
   await updateTestResult(runId, { result_id: resultId, status })
-  fetchRun()
+  await fetchRun()
+  // H46 fix: 如果所有 result 都已经打过分，提醒用户可以点「完成执行」收尾
+  // 否则 run.status 永远卡在 running
+  const results = run.value.results || []
+  const allDone = results.length > 0 && results.every((r) => r.status && r.status !== 'pending')
+  if (allDone && run.value.status === 'running') {
+    ElMessage.info('所有结果已打完，记得点击「完成执行」收尾')
+  }
 }
 
 onMounted(fetchRun)

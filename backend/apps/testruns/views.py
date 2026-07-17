@@ -3,9 +3,11 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.accounts.permissions import accessible_project_ids
+from apps.testcases.views import _parse_int_query_param
 from .models import TestRun, TestResult
 from .serializers import (TestRunListSerializer, TestRunDetailSerializer,
                           TestResultSerializer, TestResultUpdateSerializer)
@@ -15,17 +17,26 @@ class TestRunViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        # H3 fix: TestRunDetailSerializer 访问 results.test_case.*；
+        # 用 prefetch_related 避免每个 result 多 3-5 个 FK 查询。
         qs = TestRun.objects.select_related('test_plan', 'test_plan__project', 'created_by').annotate(
             total=Count('results', distinct=True),
             passed=Count('results', filter=Q(results__status='pass'), distinct=True),
             failed=Count('results', filter=Q(results__status='fail'), distinct=True),
+        ).prefetch_related(
+            'results__test_case__project',
+            'results__test_case__module',
+            'results__test_case__created_by',
+            'results__test_case__updated_by',
         )
         # SECURITY: 非管理类用户只能看到自己有成员关系的项目下的测试执行（C4）
         scoped = accessible_project_ids(self.request.user)
         if scoped is not None:
             qs = qs.filter(test_plan__project_id__in=scoped)
-        plan_id = self.request.query_params.get('plan')
-        project_id = self.request.query_params.get('project')
+        plan_id, err = _parse_int_query_param(self.request, 'plan')
+        if err: raise ValidationError({'plan': '必须是整数'})
+        project_id, err = _parse_int_query_param(self.request, 'project')
+        if err: raise ValidationError({'project': '必须是整数'})
         if plan_id:
             qs = qs.filter(test_plan_id=plan_id)
         if project_id:

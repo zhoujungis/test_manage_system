@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, password_validation
+from django.db import IntegrityError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import UserProfile, apply_role_default_permissions
 
@@ -14,6 +15,19 @@ def _validate_password_strength(password, user=None):
     """
     password_validation.validate_password(password, user=user)
     return password
+
+
+def _unique_username(base: str) -> str:
+    """H21 fix: 用 email local-part 作 username 时撞名（如 alice@glazero.com
+    和 alice@glazero.de）会触发 IntegrityError。循环加短随机后缀直到不冲突。
+    """
+    import secrets
+    candidate = base
+    for _ in range(8):
+        if not User.objects.filter(username=candidate).exists():
+            return candidate
+        candidate = f'{base}-{secrets.token_hex(2)}'   # 4 hex char
+    raise IntegrityError(f'无法为 base={base} 生成不冲突的 username')
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -250,9 +264,14 @@ class AdminCreateUserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         role = validated_data.pop('role')
-        username = validated_data.get('username', '')
+        username = validated_data.get('username', '').strip()
         if not username:
-            username = validated_data['email'].split('@')[0]
+            # H21 fix: 不再直接用 local-part，避免撞名
+            username = _unique_username(validated_data['email'].split('@')[0])
+        else:
+            # 用户显式指定了 username 也再保一次不冲突
+            if User.objects.filter(username=username).exists():
+                raise serializers.ValidationError({'username': '该用户名已被占用'})
         validated_data['username'] = username
         user = User.objects.create_user(**validated_data)
         profile = UserProfile(user=user, role=role)
@@ -286,9 +305,13 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         role = self.DEFAULT_ROLE
-        username = validated_data.get('username', '')
+        username = validated_data.get('username', '').strip()
         if not username:
-            username = validated_data['email'].split('@')[0]
+            # H21 fix: 同 AdminCreateUser，撞名时加随机后缀
+            username = _unique_username(validated_data['email'].split('@')[0])
+        else:
+            if User.objects.filter(username=username).exists():
+                raise serializers.ValidationError({'username': '该用户名已被占用'})
         validated_data['username'] = username
         user = User.objects.create_user(**validated_data)
         profile = UserProfile(user=user, role=role)
