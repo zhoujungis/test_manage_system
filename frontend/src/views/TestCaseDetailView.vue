@@ -1,45 +1,42 @@
 <template>
   <div class="page-container">
     <div class="page-header">
-      <h2>{{ isNew ? '新建测试用例' : '编辑测试用例' }}</h2>
+      <h2>{{ isNew ? t('case.new') : t('common.edit') + ' / ' + t('case.list') }}</h2>
     </div>
     <el-card v-loading="loading">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="标题" prop="title" required>
+            <el-form-item :label="t('case.title')" prop="title" required>
               <el-input v-model="form.title" maxlength="200" show-word-limit />
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item label="产品线" prop="product_line" required>
+            <el-form-item :label="t('case.productLine')" prop="product_line" required>
               <el-select v-model="form.product_line">
-                <el-option label="摄像头" value="camera" />
-                <el-option label="门铃" value="doorbell" />
+                <el-option :label="t('project.productCamera')" value="camera" />
+                <el-option :label="t('project.productDoorbell')" value="doorbell" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item label="类型" prop="type">
+            <el-form-item :label="t('case.type')" prop="type">
               <el-select v-model="form.type">
-                <el-option label="功能测试" value="functional" />
-                <el-option label="接口测试" value="api" />
-                <el-option label="UI测试" value="ui" />
-                <el-option label="性能测试" value="performance" />
+                <el-option v-for="(label, key) in typeLabels" :key="key" :label="label" :value="key" />
               </el-select>
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="所属项目">
+            <el-form-item :label="t('crumb.project')">
               <el-select v-model="form.project" filterable clearable @change="onProjectChange">
                 <el-option v-for="p in projectList" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="功能模块">
+            <el-form-item :label="t('case.module')">
               <el-select v-model="form.module" filterable clearable>
                 <el-option v-for="m in moduleList" :key="m.id" :label="m.name" :value="m.id" />
               </el-select>
@@ -48,46 +45,40 @@
         </el-row>
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="优先级">
+            <el-form-item :label="t('case.priority')">
               <el-select v-model="form.priority">
-                <el-option label="P0-最高" value="P0" />
-                <el-option label="P1-高" value="P1" />
-                <el-option label="P2-中" value="P2" />
-                <el-option label="P3-低" value="P3" />
-                <el-option label="P4-最低" value="P4" />
+                <el-option v-for="key in ['P0','P1','P2','P3','P4']" :key="key" :label="priorityLabel(key)" :value="key" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="状态">
+            <el-form-item :label="t('case.status')">
               <el-select v-model="form.status">
-                <el-option label="草稿" value="draft" />
-                <el-option label="活跃" value="active" />
-                <el-option label="已废弃" value="deprecated" />
+                <el-option v-for="(label, key) in statusLabels" :key="key" :label="label" :value="key" />
               </el-select>
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="前置条件">
+        <el-form-item :label="t('case.preconditions')">
           <el-input v-model="form.preconditions" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('case.description')">
           <el-input v-model="form.description" type="textarea" :rows="3" />
         </el-form-item>
-        <el-form-item label="测试步骤">
+        <el-form-item :label="t('case.addStep')">
           <div v-for="(step, idx) in form.steps" :key="idx" style="margin-bottom: 12px; padding: 12px; background: var(--tm-surface-2); border-radius: 4px">
             <el-row :gutter="12">
-              <el-col :span="2"><el-tag>步骤{{ idx + 1 }}</el-tag></el-col>
-              <el-col :span="10"><el-input v-model="step.action" placeholder="操作步骤" maxlength="500" /></el-col>
-              <el-col :span="10"><el-input v-model="step.expected_result" placeholder="预期结果" maxlength="500" /></el-col>
+              <el-col :span="2"><el-tag>{{ idx + 1 }}</el-tag></el-col>
+              <el-col :span="10"><el-input v-model="step.action" :placeholder="t('case.action')" maxlength="500" /></el-col>
+              <el-col :span="10"><el-input v-model="step.expected_result" :placeholder="t('case.expected')" maxlength="500" /></el-col>
               <el-col :span="2"><el-button type="danger" circle :icon="Delete" @click="removeStep(idx)" /></el-col>
             </el-row>
           </div>
-          <el-button type="primary" @click="addStep">+ 添加步骤</el-button>
+          <el-button type="primary" @click="addStep">+ {{ t('case.addStep') }}</el-button>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-          <el-button :disabled="saving" @click="goBack">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="handleSave">{{ t('common.save') }}</el-button>
+          <el-button :disabled="saving" @click="goBack">{{ t('common.cancel') }}</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -96,34 +87,39 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { getTestCase, createTestCase, updateTestCase } from '@/api/testcases'
 import { getProjects, getModules, getLibraryModules } from '@/api/projects'
 import { ElMessage } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
+import { useFormat } from '@/composables/useFormat'
 
+const { t } = useI18n()
+const { priorityLabel } = useFormat()
 const route = useRoute()
 const router = useRouter()
 const testcaseId = route.params.tid
 const isNew = computed(() => !testcaseId || testcaseId === 'new')
 const isLibrary = computed(() => !route.path.startsWith('/projects/'))
 const loading = ref(false)
-// F7 fix: 表单提交加 saving 状态 + ref + rules；不允许重复点击
 const saving = ref(false)
 const formRef = ref(null)
-// F7 fix: 真实校验规则（不只是 html required 标记）
-const rules = {
+const typeLabels = computed(() => t('case.typeLabels'))
+const statusLabels = computed(() => t('status.testcase'))
+
+const rules = computed(() => ({
   title: [
-    { required: true, message: '请填写标题', trigger: 'blur' },
-    { min: 1, max: 200, message: '标题长度 1-200', trigger: 'blur' },
+    { required: true, message: t('case.title'), trigger: 'blur' },
+    { min: 1, max: 200, message: t('case.title'), trigger: 'blur' },
   ],
   product_line: [
-    { required: true, message: '请选择产品线', trigger: 'change' },
+    { required: true, message: t('case.productLine'), trigger: 'change' },
   ],
   type: [
-    { required: true, message: '请选择类型', trigger: 'change' },
+    { required: true, message: t('case.type'), trigger: 'change' },
   ],
-}
+})).value
 
 const projectList = ref([])
 const moduleList = ref([])

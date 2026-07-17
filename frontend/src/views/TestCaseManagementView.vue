@@ -2,21 +2,17 @@
   <div class="tc-page">
     <div class="tc-toolbar">
       <el-select :model-value="productLine" @change="onTab" class="tc-toolbar__select">
-        <el-option label="摄像头" value="camera" />
-        <el-option label="门铃" value="doorbell" />
+        <el-option :label="t('project.productCamera')" value="camera" />
+        <el-option :label="t('project.productDoorbell')" value="doorbell" />
       </el-select>
       <el-select
         :model-value="priorityFilter"
         @change="onFilter"
         clearable
-        placeholder="优先级"
+        :placeholder="t('case.priority')"
         class="tc-toolbar__select tc-toolbar__select--sm"
       >
-        <el-option label="P0" value="P0" />
-        <el-option label="P1" value="P1" />
-        <el-option label="P2" value="P2" />
-        <el-option label="P3" value="P3" />
-        <el-option label="P4" value="P4" />
+        <el-option v-for="key in ['P0','P1','P2','P3','P4']" :key="key" :label="key" :value="key" />
       </el-select>
       <div class="tc-toolbar__spacer" />
       <el-button
@@ -24,7 +20,7 @@
         @click="openAddModule"
       >
         <el-icon><FolderAdd /></el-icon>
-        新增模块
+        {{ t('module.title') }}
       </el-button>
       <el-button
         v-if="canManageTestCaseLibrary"
@@ -32,12 +28,12 @@
         @click="$router.push(`/testcases/${productLine}/new`)"
       >
         <el-icon><Plus /></el-icon>
-        新建用例
+        {{ t('case.new') }}
       </el-button>
     </div>
     <div class="tc-body">
     <div class="tc-left">
-      <el-input v-model="treeFilter" placeholder="搜索用例..." size="small" clearable style="margin-bottom: 8px" />
+      <el-input v-model="treeFilter" :placeholder="t('common.search')" size="small" clearable style="margin-bottom: 8px" />
       <el-tree
         ref="treeRef"
         :data="treeData"
@@ -79,37 +75,37 @@
           </div>
         </div>
         <el-descriptions :column="3" border size="small">
-          <el-descriptions-item label="优先级"><el-tag :type="pType(detail.priority)" size="small">{{ detail.priority }}</el-tag></el-descriptions-item>
-          <el-descriptions-item label="类型">{{ tLabel(detail.case_type) }}</el-descriptions-item>
-          <el-descriptions-item label="状态"><el-tag :type="sType(detail.status)" size="small">{{ sLabel(detail.status) }}</el-tag></el-descriptions-item>
-          <el-descriptions-item label="创建人">{{ detail.created_by_name || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="修改人">{{ full?.updated_by_name || detail.updated_by_name || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="修改时间">{{ (full?.updated_at || detail.updated_at || '').slice(0,16).replace('T',' ') || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="前置条件" :span="3">{{ detail.preconditions || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="描述" :span="3">{{ detail.description || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('case.priority')"><el-tag :type="pType(detail.priority)" size="small">{{ detail.priority }}</el-tag></el-descriptions-item>
+          <el-descriptions-item :label="t('case.type')">{{ tLabel(detail.case_type) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('case.status')"><el-tag :type="sType(detail.status)" size="small">{{ sLabel(detail.status) }}</el-tag></el-descriptions-item>
+          <el-descriptions-item :label="t('case.creator')">{{ detail.created_by_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('case.updater')">{{ full?.updated_by_name || detail.updated_by_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('case.updatedAt')">{{ (full?.updated_at || detail.updated_at || '').slice(0,16).replace('T',' ') || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('case.preconditions')" :span="3">{{ detail.preconditions || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('case.description')" :span="3">{{ detail.description || '-' }}</el-descriptions-item>
         </el-descriptions>
         <div v-if="full?.steps?.length" style="margin-top:16px">
-          <h4 style="margin-bottom:8px">测试步骤</h4>
+          <h4 style="margin-bottom:8px">{{ t('case.addStep') }}</h4>
           <el-table :data="full.steps" size="small" stripe>
             <el-table-column type="index" width="50" />
-            <el-table-column prop="action" label="操作步骤" />
-            <el-table-column prop="expected_result" label="预期结果" />
+            <el-table-column prop="action" :label="t('case.action')" />
+            <el-table-column prop="expected_result" :label="t('case.expected')" />
           </el-table>
         </div>
       </template>
-      <el-empty v-else description="选择左侧用例查看详情" />
+      <el-empty v-else :description="t('common.noData')" />
     </div>
     </div>
 
-    <el-dialog v-model="moduleDialogVisible" title="新增功能模块" width="400px" destroy-on-close :close-on-click-modal="false">
+    <el-dialog v-model="moduleDialogVisible" :title="t('module.title')" width="400px" destroy-on-close :close-on-click-modal="false">
       <el-form ref="moduleFormRef" :model="moduleForm" :rules="moduleRules" label-width="80px">
-        <el-form-item label="模块名称" prop="name">
-          <el-input v-model="moduleForm.name" placeholder="请输入模块名称" maxlength="50" />
+        <el-form-item :label="t('module.name')" prop="name">
+          <el-input v-model="moduleForm.name" :placeholder="t('module.name')" maxlength="50" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="moduleDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="addingModule" @click="submitAddModule">创建</el-button>
+        <el-button @click="moduleDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="addingModule" @click="submitAddModule">{{ t('common.create') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -117,12 +113,15 @@
 
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { getTestCaseTree, getTestCase, deleteTestCase } from '@/api/testcases'
 import { getLibraryModules, createLibraryModule, deleteModule } from '@/api/projects'
 import { useUserIdentity } from '@/composables/useUserIdentity'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
+
+const { t } = useI18n()
 
 const { canManageTestCaseLibrary, canWriteProjects, isAdmin } = useUserIdentity()
 const canDelete = computed(() => canWriteProjects.value || isAdmin.value)
@@ -149,7 +148,7 @@ const moduleDialogVisible = ref(false)
 const addingModule = ref(false)
 // C12 fix: 表单校验
 const moduleFormRef = ref(null)
-const moduleRules = { name: [{ required: true, message: '请输入模块名称', trigger: 'blur' }] }
+const moduleRules = computed(() => ({ name: [{ required: true, message: t('module.name'), trigger: 'blur' }] })).value
 const moduleForm = ref({ name: '' })
 
 // 用 AbortController 避免快速切换产品线 / 优先级时旧请求覆盖新数据
@@ -161,8 +160,8 @@ watch(() => route.params.product_line, (v) => {
 watch(() => route.query.priority, () => loadTree())
 watch(treeFilter, (v) => treeRef.value?.filter(v))
 
-function tLabel(t) { const m={functional:'功能测试',api:'接口测试',ui:'UI测试',performance:'性能测试'}; return m[t]||t }
-function sLabel(s) { const m={draft:'草稿',active:'活跃',deprecated:'已废弃'}; return m[s]||s }
+function tLabel(key) { return t(`case.typeLabels.${key}`) || key }
+function sLabel(s) { return t(`status.testcase.${s}`) || s }
 function sType(s) { const m={draft:'info',active:'success',deprecated:'warning'}; return m[s]||'info' }
 function pType(p) { const m={P0:'danger',P1:'danger',P2:'warning',P3:'info',P4:''}; return m[p]||'' }
 
@@ -221,11 +220,11 @@ async function onNodeClick(d) {
 
 async function del() {
   try {
-    await ElMessageBox.confirm('删除该用例？','提示',{type:'warning'})
+    await ElMessageBox.confirm(t('common.delete'), t('common.confirm'), { type: 'warning' })
   } catch { return }
   try {
     await deleteTestCase(detail.value.id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('msg.deleteSuccess'))
     detail.value = null
     full.value = null
     loadTree()
@@ -245,7 +244,7 @@ async function submitAddModule() {
   addingModule.value = true
   try {
     await createLibraryModule({ name: moduleForm.value.name.trim(), product_line: productLine.value })
-    ElMessage.success('模块已创建')
+    ElMessage.success(t('msg.createSuccess'))
     moduleDialogVisible.value = false
     loadTree()
   } catch { /* 拦截器已 toast */ }

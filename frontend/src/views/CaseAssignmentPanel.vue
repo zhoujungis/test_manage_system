@@ -1,11 +1,12 @@
 <template>
   <div class="case-panel">
     <el-tabs v-model="activeSubTab" type="card">
-      <!-- 用例分配 -->
-      <el-tab-pane label="用例分配" name="assign">
+      <el-tab-pane :label="t('project.caseAssignment')" name="assign">
         <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
-          <el-button type="primary" size="small" @click="showCaseDialog()">分配用例</el-button>
-          <el-button size="small" @click="toggleAssignedTree">{{ assignedExpanded ? '收起全部' : '展开全部' }}</el-button>
+          <el-button type="primary" size="small" @click="showCaseDialog()">{{ t('project.assignCase') }}</el-button>
+          <el-button size="small" @click="toggleAssignedTree">
+            {{ assignedExpanded ? t('caseAssignment.collapseAll') : t('caseAssignment.expandAll') }}
+          </el-button>
         </div>
         <el-tree :data="caseAssignedTree" :props="{ children: 'children', label: 'label' }"
           node-key="id" style="max-height:500px;overflow:auto" ref="assignedTreeRef"
@@ -22,21 +23,22 @@
               <span>{{ data.label }}</span>
               <span v-if="data._notes" style="color:#909399;font-size:11px">— {{ data._notes }}</span>
               <template v-if="data.type==='testcase'">
-                <el-button size="small" @click.stop="showCaseDialog(data._raw)">编辑</el-button>
-                <el-button size="small" type="danger" @click.stop="handleDeleteCase(data._raw)">删除</el-button>
+                <el-button size="small" @click.stop="showCaseDialog(data._raw)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="danger" @click.stop="handleDeleteCase(data._raw)">{{ t('common.delete') }}</el-button>
               </template>
             </span>
           </template>
         </el-tree>
       </el-tab-pane>
 
-      <!-- 用例审核 -->
-      <el-tab-pane label="用例审核" name="review">
+      <el-tab-pane :label="t('caseAssignment.reviewAll', { n: '' }).trim() || t('caseAssignment.reviewAll').split('(')[0]" name="review">
         <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
           <el-button type="success" size="small" @click="batchApproveAll" :disabled="!reviewIds.length">
-            一键审核通过 ({{ reviewIds.length }})
+            {{ t('caseAssignment.reviewAll', { n: reviewIds.length }) }}
           </el-button>
-          <el-button size="small" @click="toggleReviewTree">{{ reviewExpanded ? '收起全部' : '展开全部' }}</el-button>
+          <el-button size="small" @click="toggleReviewTree">
+            {{ reviewExpanded ? t('caseAssignment.collapseAll') : t('caseAssignment.expandAll') }}
+          </el-button>
         </div>
         <el-tree :data="reviewTree" :props="{ children: 'children', label: 'label' }"
           node-key="id" style="max-height:500px;overflow:auto" ref="reviewTreeRef"
@@ -47,9 +49,9 @@
               <el-icon v-else-if="data.type==='module'"><Folder /></el-icon>
               <template v-else>
                 <el-tag :type="priorityType(data._priority)" size="small">{{ data._priority }}</el-tag>
-                <el-tag :type="data._status==='passed'?'success':data._status==='failed'?'danger':'info'" size="small">{{ data._statusLabel }}</el-tag>
+                <el-tag :type="assignmentStatusType(data._status)" size="small">{{ data._statusLabel }}</el-tag>
                 <span>{{ data._assignedTo }}</span>
-                <el-tag :type="data._approvalRaw==='approved'?'success':data._approvalRaw==='rejected'?'danger':'info'" size="small">{{ approvalLabels[data._approvalRaw] }}</el-tag>
+                <el-tag :type="approvalTagType(data._approvalRaw)" size="small">{{ approvalLabels[data._approvalRaw] }}</el-tag>
               </template>
               <span>{{ data.label }}</span>
               <span v-if="data._notes" style="color:#909399;font-size:11px">— {{ data._notes }}</span>
@@ -59,14 +61,13 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 分配对话框 -->
-    <el-dialog :title="caseEditing.id ? '编辑用例分配' : '分配测试用例'" v-model="caseDialogVisible" width="700px" @opened="onCaseDialogOpen" :close-on-click-modal="false">
-      <el-input v-model="caseTreeFilter" placeholder="搜索用例..." size="small" clearable style="margin-bottom:8px" />
+    <el-dialog :title="caseEditing.id ? t('common.edit') : t('project.assignCase')" v-model="caseDialogVisible" width="700px" @opened="onCaseDialogOpen" :close-on-click-modal="false">
+      <el-input v-model="caseTreeFilter" :placeholder="t('common.search')" size="small" clearable style="margin-bottom:8px" />
       <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px">
-        <el-button size="small" @click="selectAllCases">全选</el-button>
-        <el-button size="small" @click="deselectAllCases">全不选</el-button>
-        <el-checkbox v-model="filterAssignedCases" size="small" style="margin-left:auto">过滤已选用例</el-checkbox>
-        <span style="color:#909399;font-size:12px">已选 {{ selectedCaseIds.length }} 个用例</span>
+        <el-button size="small" @click="selectAllCases">{{ t('plan.selectAll') }}</el-button>
+        <el-button size="small" @click="deselectAllCases">{{ t('plan.deselectAll') }}</el-button>
+        <el-checkbox v-model="filterAssignedCases" size="small" style="margin-left:auto">{{ t('plan.filterAssigned') }}</el-checkbox>
+        <span style="color:#909399;font-size:12px">{{ t('caseAssignment.selected', { n: selectedCaseIds.length }) }}</span>
       </div>
       <el-tree :data="caseTreeData" :props="{ children: 'children', label: 'label' }"
         node-key="id" show-checkbox :filter-node-method="filterCaseNode"
@@ -82,35 +83,32 @@
       </el-tree>
       <el-divider style="margin:12px 0" />
       <el-form ref="caseFormRef" :model="caseForm" :rules="caseRules" label-width="80px">
-        <el-form-item label="关联任务" prop="task_id">
-          <el-select v-model="caseForm.task_id" placeholder="选择任务" style="width:100%">
+        <el-form-item :label="t('caseAssignment.linkTask')" prop="task_id">
+          <el-select v-model="caseForm.task_id" :placeholder="t('task.title')" style="width:100%">
             <el-option v-for="t in openTasks" :key="t.id"
               :label="`${t.title}${t.round ? ' (' + t.round + ')' : ''}`" :value="t.id" />
           </el-select>
         </el-form-item>
       </el-form>
       <el-form :model="caseForm" label-width="80px" inline>
-        <el-form-item label="执行人">
+        <el-form-item :label="t('caseAssignment.assignee')">
           <el-select v-model="caseForm.assigned_to" filterable style="width:200px">
             <el-option v-for="m in members" :key="m.user" :label="m.user_name" :value="m.user" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item :label="t('caseAssignment.status')">
           <el-select v-model="caseForm.status" style="width:140px">
-            <el-option label="待测试" value="pending" />
-            <el-option label="测试中" value="in_progress" />
-            <el-option label="已通过" value="passed" />
-            <el-option label="未通过" value="failed" />
+            <el-option v-for="(label, key) in assignmentStatusLabels" :key="key" :label="label" :value="key" />
           </el-select>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item :label="t('caseAssignment.notes')">
           <el-input v-model="caseForm.notes" style="width:220px" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="caseDialogVisible = false">取消</el-button>
+        <el-button @click="caseDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="savingCase" @click="handleSaveCase">
-          {{ caseEditing.id ? '保存' : `批量分配 (${selectedCaseIds.length})` }}
+          {{ caseEditing.id ? t('common.save') : t('caseAssignment.batchAssign', { n: selectedCaseIds.length }) }}
         </el-button>
       </template>
     </el-dialog>
@@ -118,21 +116,26 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getCaseAssignments, createCaseAssignment, updateCaseAssignment,
   deleteCaseAssignment, batchApprove, getTasks, getMembers,
 } from '@/api/projects'
 import { useFormat } from '@/composables/useFormat'
-import { formatDateTime } from '@/utils/dateFormat'
 import { Folder, Document, List } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
+const { priorityType, assignmentStatusType } = useFormat()
 const props = defineProps({ project: { type: Object, required: true } })
 const emit = defineEmits(['change'])
 
-const { priorityType } = useFormat()
-const approvalLabels = { pending: '未审核', approved: '审核通过', rejected: '审核不通过' }
+const approvalLabels = computed(() => t('status.approval'))
+const assignmentStatusLabels = computed(() => t('status.assignment'))
+const APPROVAL_TAG = { pending: 'info', approved: 'success', rejected: 'danger' }
+const approvalTagType = (s) => APPROVAL_TAG[s] || 'info'
+
 const activeSubTab = ref('assign')
 
 // ---- 分配树 ----
@@ -154,17 +157,15 @@ function buildAssignmentTree(items) {
     const tKey = a.task || 'no-task'
     if (!tasksMap[tKey]) {
       tasksMap[tKey] = {
-        id: `task-${tKey}`, label: a.task_title || '无任务', type: 'task', children: [],
+        id: `task-${tKey}`,
+        label: a.task_title || t('task.title'),
+        type: 'task',
+        children: [],
       }
     }
     tasksMap[tKey].children.push({
-      id: `tc-${a.id}`,
-      label: a.test_case_title,
-      type: 'testcase',
-      _priority: a.test_case_priority,
-      _assignedTo: a.assigned_to_name,
-      _notes: a.notes,
-      _raw: a,
+      id: `tc-${a.id}`, label: a.test_case_title, type: 'testcase',
+      _priority: a.test_case_priority, _assignedTo: a.assigned_to_name, _notes: a.notes, _raw: a,
     })
   })
   caseAssignedTree.value = Object.values(tasksMap)
@@ -173,11 +174,7 @@ function buildAssignmentTree(items) {
   }
 }
 function toggleAssignedTree() {
-  if (assignedExpanded.value) {
-    assignedExpandedKeys.value = []
-  } else {
-    assignedExpandedKeys.value = caseAssignedTree.value.map((n) => n.id)
-  }
+  assignedExpandedKeys.value = assignedExpanded.value ? [] : caseAssignedTree.value.map((n) => n.id)
   assignedExpanded.value = !assignedExpanded.value
   assignedTreeKey.value++
 }
@@ -202,18 +199,19 @@ function buildReviewTree(items) {
     const tKey = a.task || 'no-task'
     if (!tasksMap[tKey]) {
       tasksMap[tKey] = {
-        id: `task-${tKey}`, label: a.task_title || '无任务', type: 'task', children: [],
+        id: `task-${tKey}`,
+        label: a.task_title || t('task.title'),
+        type: 'task',
+        children: [],
       }
     }
     tasksMap[tKey].children.push({
-      id: `tc-${a.id}`,
-      label: a.test_case_title,
-      type: 'testcase',
+      id: `tc-${a.id}`, label: a.test_case_title, type: 'testcase',
       _priority: a.test_case_priority,
-      _assignedTo: a.assigned_to_name,
       _status: a.status,
-      _statusLabel: assignmentStatusLabel(a.status),
+      _statusLabel: assignmentStatusLabels.value[a.status] || a.status,
       _approvalRaw: a.approval_status,
+      _assignedTo: a.assigned_to_name,
       _notes: a.notes,
     })
   })
@@ -222,24 +220,17 @@ function buildReviewTree(items) {
     reviewExpandedKeys.value = reviewTree.value.map((n) => n.id)
   }
 }
-function assignmentStatusLabel(s) {
-  return { pending: '待测试', in_progress: '测试中', passed: '通过', failed: '失败' }[s] || s
-}
 function toggleReviewTree() {
-  if (reviewExpanded.value) {
-    reviewExpandedKeys.value = []
-  } else {
-    reviewExpandedKeys.value = reviewTree.value.map((n) => n.id)
-  }
+  reviewExpandedKeys.value = reviewExpanded.value ? [] : reviewTree.value.map((n) => n.id)
   reviewExpanded.value = !reviewExpanded.value
   reviewTreeKey.value++
 }
 async function batchApproveAll() {
   try {
-    await ElMessageBox.confirm(`一键通过 ${reviewIds.value.length} 个分配？`, '审核确认', { type: 'warning' })
+    await ElMessageBox.confirm(`${t('common.confirm')} ${reviewIds.value.length}?`, t('common.confirm'), { type: 'warning' })
   } catch { return }
   const res = await batchApprove(props.project.id, reviewIds.value)
-  ElMessage.success(`已通过 ${res.updated || reviewIds.value.length} 个`)
+  ElMessage.success(`${t('msg.updateSuccess')}: ${res.updated || reviewIds.value.length}`)
   fetchCaseAssignments()
   emit('change')
 }
@@ -254,7 +245,9 @@ const caseFormRef = ref(null)
 const filterAssignedCases = ref(false)
 const selectedCaseIds = ref([])
 const caseForm = reactive({ task_id: null, assigned_to: null, status: 'pending', notes: '' })
-const caseRules = { task_id: [{ required: true, message: '请选择关联任务', trigger: 'change' }] }
+const caseRules = computed(() => ({
+  task_id: [{ required: true, message: t('caseAssignment.linkTask'), trigger: 'change' }],
+})).value
 const savingCase = ref(false)
 const members = ref([])
 const openTasks = computed(() => (tasks.value || []).filter((t) => t.status !== 'done'))
@@ -264,20 +257,17 @@ async function loadCaseTree() {
   const res = await getCaseAssignments(props.project.id, { all: 1 })
   const allIds = new Set((res.results || res).map((a) => a.test_case))
   caseTreeData.value = await fetchTestCaseTree()
-  // 简化：直接返回树
   async function fetchTestCaseTree() {
     const { getTestCaseTree } = await import('@/api/testcases')
     const params = { product_line: props.project.product_line || 'camera' }
     const items = await getTestCaseTree(params).catch(() => ({ results: [] }))
     const mods = {}
     ;(items.results || []).forEach((tc) => {
-      const m = tc.module_name || '未分类'
+      const m = tc.module_name || t('caseAssignment.notes')  // fallback 'misc'
       if (!mods[m]) mods[m] = []
       const assigned = allIds.has(tc.id) && filterAssignedCases.value
       if (filterAssignedCases.value && assigned) return
-      mods[m].push({
-        id: `tc-${tc.id}`, label: tc.title, type: 'testcase', priority: tc.priority,
-      })
+      mods[m].push({ id: `tc-${tc.id}`, label: tc.title, type: 'testcase', priority: tc.priority })
     })
     return Object.entries(mods).map(([m, children]) => ({
       id: `mod-${m}`, label: m, type: 'module', children,
@@ -336,16 +326,16 @@ function showCaseDialog(row) {
 
 async function handleSaveCase() {
   if (caseEditing.id) {
-    if (!selectedCaseIds.value.length) { ElMessage.warning('请选择用例'); return }
+    if (!selectedCaseIds.value.length) { ElMessage.warning(t('caseAssignment.selectCases')); return }
     if (!caseFormRef.value) return
     const valid = await caseFormRef.value.validate().catch(() => false)
     if (!valid) return
   } else {
-    if (!selectedCaseIds.value.length) { ElMessage.warning('请勾选用例'); return }
+    if (!selectedCaseIds.value.length) { ElMessage.warning(t('caseAssignment.selectCases')); return }
     if (!caseFormRef.value) return
     const valid = await caseFormRef.value.validate().catch(() => false)
     if (!valid) return
-    if (!caseForm.assigned_to) { ElMessage.warning('请选择执行人'); return }
+    if (!caseForm.assigned_to) { ElMessage.warning(t('caseAssignment.selectAssignee')); return }
   }
   savingCase.value = true
   try {
@@ -357,7 +347,7 @@ async function handleSaveCase() {
         status: caseForm.status,
         notes: caseForm.notes,
       })
-      ElMessage.success('更新成功')
+      ElMessage.success(t('msg.updateSuccess'))
     } else {
       const res = await createCaseAssignment(props.project.id, {
         test_case_ids: selectedCaseIds.value,
@@ -366,7 +356,7 @@ async function handleSaveCase() {
         status: caseForm.status,
         notes: caseForm.notes,
       })
-      ElMessage.success(`分配完成：新增 ${res.created}，更新 ${res.updated}`)
+      ElMessage.success(`${t('msg.createSuccess')}: ${res.created}/${res.updated}`)
     }
     caseDialogVisible.value = false
     fetchCaseAssignments()
@@ -377,10 +367,10 @@ async function handleSaveCase() {
 
 async function handleDeleteCase(row) {
   try {
-    await ElMessageBox.confirm(`确定删除用例分配「${row.test_case_title || ''}」？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`${t('common.delete')}「${row.test_case_title || ''}」?`, t('common.confirm'), { type: 'warning' })
   } catch { return }
   await deleteCaseAssignment(row.id)
-  ElMessage.success('已删除')
+  ElMessage.success(t('msg.deleteSuccess'))
   fetchCaseAssignments()
   emit('change')
 }

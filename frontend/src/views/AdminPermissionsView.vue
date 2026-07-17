@@ -2,12 +2,12 @@
   <div class="page-container admin-perm-page">
     <div class="page-header">
       <div>
-        <h2>权限管理</h2>
-        <p class="text-muted page-header__sub">仅管理员可访问，配置非管理员账号的功能权限</p>
+        <h2>{{ t('admin.permissions') }}</h2>
+        <p class="text-muted page-header__sub">{{ t('msg.adminOnly') }}</p>
       </div>
       <el-button @click="loadData" :loading="loading">
         <el-icon><Refresh /></el-icon>
-        刷新
+        {{ t('common.refresh') }}
       </el-button>
     </div>
 
@@ -16,15 +16,15 @@
       :closable="false"
       show-icon
       class="admin-perm-tip"
-      title="说明"
-      description="修改后立即生效。切换角色时会自动应用该角色默认权限，也可勾选「应用角色默认权限」手动恢复。观察者默认可浏览各模块，不可新建/编辑。管理员不在此列表。如需删除用户请前往用户管理页面。"
+      :title="t('common.notice')"
+      :description="t('msg.adminOnly')"
     />
 
     <div class="table-card" v-loading="loading">
       <el-table :data="users" stripe>
-        <el-table-column prop="username" label="用户名" width="120" />
-        <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
-        <el-table-column label="角色" width="130">
+        <el-table-column prop="username" :label="t('admin.username')" width="120" />
+        <el-table-column prop="email" :label="t('admin.email')" min-width="180" show-overflow-tooltip />
+        <el-table-column :label="t('admin.role')" width="130">
           <template #default="{ row }">
             <el-tag :type="roleTagType(row.role)" size="small">{{ row.role_label }}</el-tag>
           </template>
@@ -37,21 +37,21 @@
           align="center"
         >
           <template #default="{ row }">
-            <el-icon v-if="row.permissions?.[perm.key]" color="#10b981" :size="18"><CircleCheck /></el-icon>
-            <el-icon v-else color="#cbd5e1" :size="18"><Close /></el-icon>
+            <el-icon v-if="row.permissions?.[perm.key]" :style="{ color: 'var(--tm-success)' }" :size="18"><CircleCheck /></el-icon>
+            <el-icon v-else :style="{ color: 'var(--tm-text-muted)' }" :size="18"><Close /></el-icon>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80" fixed="right">
+        <el-table-column :label="t('common.operation')" width="80" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openEdit(row)">配置</el-button>
+            <el-button type="primary" link @click="openEdit(row)">{{ t('common.edit') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!loading && users.length === 0" description="暂无待配置用户" />
+      <el-empty v-if="!loading && users.length === 0" :description="t('common.noData')" />
     </div>
 
     <div v-if="admins.length" class="admin-perm-admins">
-      <h3 class="admin-perm-admins__title">系统管理员</h3>
+      <h3 class="admin-perm-admins__title">{{ t('admin.isAdmin') }}</h3>
       <el-space wrap>
         <el-tag v-for="a in admins" :key="a.id" type="danger" effect="plain">
           {{ a.username }} ({{ a.email }})
@@ -59,15 +59,15 @@
       </el-space>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="`配置权限 — ${editing?.username}`" width="520px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="`${t('admin.permissions')} — ${editing?.username}`" width="520px" destroy-on-close>
       <el-form v-if="editing" label-width="100px">
-        <el-form-item label="角色">
+        <el-form-item :label="t('admin.role')">
           <el-select v-model="form.role" style="width:100%" @change="onRoleChange">
             <el-option v-for="r in roleChoices" :key="r.value" :label="r.label" :value="r.value" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-checkbox v-model="form.apply_role_defaults">应用角色默认权限</el-checkbox>
+          <el-checkbox v-model="form.apply_role_defaults">{{ t('msg.adminOnly') }}</el-checkbox>
         </el-form-item>
         <el-divider />
         <el-form-item v-for="perm in permissionMeta" :key="perm.key" :label="perm.label">
@@ -78,8 +78,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveEdit">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="saveEdit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -87,10 +87,13 @@
 
 <script setup>
 import { reactive, ref, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getAdminPermissionBoard, updateUserPermissions } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
+import { CircleCheck, Close, Refresh } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const loading = ref(false)
 const saving = ref(false)
@@ -114,10 +117,7 @@ const form = reactive({
 })
 
 const ROLE_TAG = { tester: 'success', developer: 'warning', viewer: 'info' }
-
-function roleTagType(role) {
-  return ROLE_TAG[role] || 'info'
-}
+function roleTagType(role) { return ROLE_TAG[role] || 'info' }
 
 async function loadData() {
   loading.value = true
@@ -128,9 +128,7 @@ async function loadData() {
     roleChoices.value = res.role_choices || []
     permissionMeta.value = res.permission_meta || []
     roleDefaults.value = res.role_defaults || {}
-  } finally {
-    loading.value = false
-  }
+  } finally { loading.value = false }
 }
 
 function openEdit(row) {
@@ -151,34 +149,22 @@ async function saveEdit() {
   if (!editing.value) return
   saving.value = true
   try {
-    const payload = {
-      role: form.role,
-      apply_role_defaults: form.apply_role_defaults,
-    }
-    if (!form.apply_role_defaults) {
-      Object.assign(payload, form.permissions)
-    }
+    const payload = { role: form.role, apply_role_defaults: form.apply_role_defaults }
+    if (!form.apply_role_defaults) Object.assign(payload, form.permissions)
     const updated = await updateUserPermissions(editing.value.id, payload)
     const idx = users.value.findIndex((u) => u.id === editing.value.id)
     if (idx >= 0) users.value[idx] = updated
-    if (editing.value.id === auth.user?.id) {
-      await auth.fetchUser()
-    }
-    ElMessage.success('权限已更新')
+    if (editing.value.id === auth.user?.id) await auth.fetchUser()
+    ElMessage.success(t('msg.updateSuccess'))
     dialogVisible.value = false
-  } finally {
-    saving.value = false
-  }
+  } finally { saving.value = false }
 }
 
-watch(
-  () => form.apply_role_defaults,
-  (v) => {
-    if (v && roleDefaults.value[form.role]) {
-      Object.assign(form.permissions, roleDefaults.value[form.role])
-    }
+watch(() => form.apply_role_defaults, (v) => {
+  if (v && roleDefaults.value[form.role]) {
+    Object.assign(form.permissions, roleDefaults.value[form.role])
   }
-)
+})
 
 onMounted(loadData)
 </script>
@@ -187,11 +173,9 @@ onMounted(loadData)
 .admin-perm-page {
   max-width: 1200px;
 }
-
 .admin-perm-tip {
   margin-bottom: 20px;
 }
-
 .admin-perm-admins {
   margin-top: 28px;
   padding: 16px 20px;
@@ -199,20 +183,17 @@ onMounted(loadData)
   border: 1px solid var(--tm-border);
   border-radius: var(--tm-radius-lg);
 }
-
 .admin-perm-admins__title {
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 12px;
   color: var(--tm-text);
 }
-
 .perm-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-
 .perm-row__desc {
   font-size: 12px;
   color: var(--tm-text-muted);
